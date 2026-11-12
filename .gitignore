@@ -1,0 +1,4 @@
+__pycache__/
+# raw FlyWire downloads (~130MB); see README. fly_circuit.npz is kept so the game runs without them.
+fly_data/Connectivity_783.parquet
+fly_data/neuron_annotations.tsv
