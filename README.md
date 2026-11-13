@@ -44,7 +44,7 @@ python main.py
 | 사목: 선생님 최선수 일치율 | 37% | 48% |
 
 ## 데이터 출처와 라이선스
-게임 코드는 직접 작성한 것입니다(코드 라이선스는 아직 정하지 않음). 저장소에 들어 있는 뇌 데이터에는 원본의 라이선스가 따로 적용됩니다.
+게임 코드는 직접 작성한 것입니다(코드 라이선스는 아직 정하지 않음). 저장소에 들어 있는 뇌 데이터에는 원본의 라이선스가 따로 적용됩니다. 원본 라이선스 전문과 저작권 고지는 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)에 있습니다.
 
 ### 초파리: FlyWire, CC BY-NC 4.0
 `fly_data/fly_circuit.npz`와 `web/brains.js`의 초파리 부분은 FlyWire 공개 데이터(783 버전)에서 만든 2차 저작물입니다. 원본 라이선스인 [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)을 그대로 따릅니다. **비상업적 용도로만** 쓸 수 있습니다.
@@ -55,6 +55,7 @@ python main.py
   - Schlegel, P. et al. (2024). Whole-brain annotation and multi-connectome cell typing of *Drosophila*. *Nature* 634, 139–152.
   - Shiu, P. K. et al. (2024). A *Drosophila* computational brain model reveals sensorimotor processing. *Nature* 634, 210–219.
   - Zheng, Z. et al. (2018). A complete electron microscopy volume of the brain of adult *Drosophila melanogaster*. *Cell* 174, 730–743.
+  - Dorkenwald, S. et al. (2020). FlyWire: Online community for whole-brain connectomics. *bioRxiv* 2020.08.30.274225. 웹사이트: https://flywire.ai
 
 ### 꼬마선충: Cook et al. 2019
 `web/brains.js`의 꼬마선충 부분은 Cook et al. (2019)의 연결 데이터로 만들었습니다. 데이터는 OpenWorm [ConnectomeToolbox (`cect`)](https://github.com/openworm/ConnectomeToolbox)(MIT)를 통해 받았습니다. 시냅스 수를 log1p로 변환하고 GABA 뉴런을 억제성으로 처리한 뒤 크기를 조정했습니다.
