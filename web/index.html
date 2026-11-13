@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>진짜 뇌와 대결</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0c0d12; overflow: hidden; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; touch-action: none; }
+  #loading { position: absolute; color: #e6e8f0; font: 20px "Malgun Gothic", sans-serif; }
+</style>
+</head>
+<body>
+<div id="loading">뇌 데이터를 불러오는 중...</div>
+<canvas id="c" width="980" height="640"></canvas>
+<script src="brains.js"></script>
+<script src="brain.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

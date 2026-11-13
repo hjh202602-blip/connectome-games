@@ -136,13 +136,16 @@ def quit_check(ev):
 # ---------------------------------------------------------------- Pong
 def play_pong():
     loading("퐁")
-    left, right = players("pong")  # left None = human on W/S
+    left, right = players("pong")  # left (bottom) None = human on A/D
     auto = left is not None
     PH, HUMAN_SPD, BRAIN_SPD, GOAL = 0.18, 0.02, 0.018, 7
     # Spin: a paddle that is moving when it hits the ball brushes it and makes it spin.
     # The ball is first pushed the way the paddle moved, then curves back the other way
     # (Magnus effect, like a sidespin shot in table tennis).
-    PUSH, CURVE, SPIN_DECAY, VY_MAX = 0.4, 0.016, 0.985, 0.025
+    # Spin is stored as "paddle speed it came from", so hitting while moving the same way
+    # as the spin adds to it, and moving the other way cancels it or flips it.
+    PUSH, CURVE, SPIN_DECAY, VY_MAX = 0.4, 0.012, 0.993, 0.03
+    SPIN_GAIN, SPIN_MAX = 1.2, 0.05
     st = dict(score=[0, 0], hy=0.5, by=0.5, serve_dir=1, ball=None, winner=None,
               angle=0.0, trail=[], wait=0)
     speed_i = 0
@@ -155,7 +158,7 @@ def play_pong():
         old_h, old_b = st["hy"], st["by"]
         ball = st["ball"]
         if left is None:
-            st["hy"] += HUMAN_SPD * ((keys[pg.K_s] or keys[pg.K_DOWN]) - (keys[pg.K_w] or keys[pg.K_UP]))
+            st["hy"] += HUMAN_SPD * ((keys[pg.K_d] or keys[pg.K_RIGHT]) - (keys[pg.K_a] or keys[pg.K_LEFT]))
         elif ball:
             # the brains were trained as the right paddle, so the left one sees a mirrored court
             bx, byy, vx, vy, _ = ball
@@ -180,14 +183,15 @@ def play_pong():
         bx, byy = bx + vx, byy + vy
         if byy < 0 or byy > 1:
             vy, byy = -vy, min(max(byy, 0), 1)
-            spin *= 0.6  # the wall rubs some spin off
+            spin *= 0.7  # the wall rubs some spin off
         for px, py, side in ((0.03, st["hy"], -1), (0.97, st["by"], 1)):
             if (bx - px) * side >= 0 and vx * side > 0 and abs(byy - py) < PH / 2 + 0.01:
                 speed = min(abs(vx) * 1.06, 0.02)
                 vx = -side * speed
                 pv = vel[side]
                 vy = float(np.clip(vy + (byy - py) * 0.06 + pv * PUSH, -VY_MAX, VY_MAX))
-                spin = spin * 0.3 + pv  # brushing the ball sets new spin
+                # same direction as the spin -> faster spin; opposite -> weaker or reversed
+                spin = float(np.clip(spin + pv * SPIN_GAIN, -SPIN_MAX, SPIN_MAX))
                 bx = px
         st["ball"] = [bx, byy, vx, vy, spin]
         st["trail"] = (st["trail"] + [(bx, byy)])[-14:]
@@ -217,25 +221,32 @@ def play_pong():
             step(keys)
 
         ball, hy, by_ = st["ball"], st["hy"], st["by"]
+        # The physics runs along x (blue paddle at x=0, orange at x=1) with y sideways.
+        # It is drawn rotated: blue at the bottom, orange at the top, paddles moving sideways.
+        def to_screen(x, y):
+            return y * GAME_W, (1 - x) * H
+
         screen.fill(BG)
-        for y in range(0, H, 30):
-            pg.draw.rect(screen, (50, 55, 70), (GAME_W // 2 - 2, y, 4, 15))
-        ph = PH * H
-        pg.draw.rect(screen, HUMAN_C, (0.03 * GAME_W - 12, hy * H - ph / 2, 12, ph))
-        pg.draw.rect(screen, BRAIN_C, (0.97 * GAME_W, by_ * H - ph / 2, 12, ph))
-        spin_amt = min(abs(ball[4]) / 0.02, 1) if ball else 0
+        for x in range(0, GAME_W, 30):
+            pg.draw.rect(screen, (50, 55, 70), (x, H // 2 - 2, 15, 4))
+        ph = PH * GAME_W
+        pg.draw.rect(screen, HUMAN_C, (hy * GAME_W - ph / 2, 0.97 * H, ph, 12))
+        pg.draw.rect(screen, BRAIN_C, (by_ * GAME_W - ph / 2, 0.03 * H - 12, ph, 12))
+        spin_amt = min(abs(ball[4]) / SPIN_MAX, 1) if ball else 0
+        # positive spin bends the ball toward smaller y = leftwards on screen
+        curve_dir = "" if not ball or spin_amt < 0.05 else ("←" if ball[4] > 0 else "→")
         if ball:
             # trail turns pink when the ball is spinning hard
             trail = st["trail"]
             tc = (int(120 + 135 * spin_amt), int(120 - 40 * spin_amt), int(140 + 40 * spin_amt))
             for k, (tx, ty) in enumerate(trail[:-1]):
-                pg.draw.circle(screen, tc, (tx * GAME_W, ty * H), 1 + k * 5 // len(trail))
-            cx, cy = ball[0] * GAME_W, ball[1] * H
+                pg.draw.circle(screen, tc, to_screen(tx, ty), 1 + k * 5 // len(trail))
+            cx, cy = to_screen(ball[0], ball[1])
             pg.draw.circle(screen, FG, (cx, cy), 9)
             dx, dy = 8 * np.cos(st["angle"]), 8 * np.sin(st["angle"])
             pg.draw.line(screen, (230, 70, 110), (cx - dx, cy - dy), (cx + dx, cy + dy), 3)
-        text(str(st["score"][0]), F_BIG, HUMAN_C, (GAME_W // 2 - 60, 40), center=True)
-        text(str(st["score"][1]), F_BIG, BRAIN_C, (GAME_W // 2 + 60, 40), center=True)
+        text(str(st["score"][0]), F_BIG, HUMAN_C, (40, H // 2 + 40), center=True)
+        text(str(st["score"][1]), F_BIG, BRAIN_C, (40, H // 2 - 40), center=True)
         if st["winner"]:
             text(st["winner"], F_BIG, FG, (GAME_W // 2, H // 2), center=True)
             text("곧 다음 경기" if auto else "SPACE: 다시 하기", F_SMALL, DIM, (GAME_W // 2, H // 2 + 40), center=True)
@@ -243,8 +254,9 @@ def play_pong():
             text("SPACE: 서브", F_MID, DIM, (GAME_W // 2, H // 2), center=True)
         lines = [f"{name(left)}(파랑) vs {name(right)}(주황)"]
         if not auto:
-            lines += ["사람: W/S 또는 ↑/↓", "움직이면서 치면 회전이 걸려 휘어요"]
-        lines += [f"회전 {'■' * round(spin_amt * 10)}{'□' * (10 - round(spin_amt * 10))}",
+            lines += ["사람(아래): A/D 또는 ←/→", "움직이면서 치면 회전이 걸려 휘어요",
+                      "같은 방향으로 치면 더 세게, 반대면 약하게"]
+        lines += [f"회전 {'■' * round(spin_amt * 10)}{'□' * (10 - round(spin_amt * 10))} {curve_dir}",
                   f"{GOAL}점 먼저 내면 승리"]
         draw_panel([left, right], "퐁", lines)
         if auto:

@@ -12,6 +12,12 @@ pip install -r requirements.txt
 python main.py
 ```
 
+## 웹 버전
+`web/index.html`을 브라우저로 열면 설치 없이 바로 됩니다. 기능은 pygame 버전과 같습니다.
+- 뇌 계산은 JavaScript(`web/brain.js`)로 다시 짰고, Python과 결과가 같습니다(최대 오차 0.00001).
+- 배선과 학습된 출력층은 `web/brains.js`(2MB)에 들어 있습니다. 다시 학습한 뒤에는 `python export_web.py`로 새로 만드세요.
+- 브라우저에서는 ESC가 전체화면 해제에 쓰이므로, 메뉴로 돌아가거나 그만 볼 때는 **Q**를 누르거나 화면의 버튼을 쓰세요.
+
 ## 초파리 데이터
 잘라낸 회로(`fly_data/fly_circuit.npz`)와 학습된 모델(`models/`)이 저장소에 들어 있어서 바로 실행됩니다. 회로를 새로 잘라내려면 아래 원본 파일(약 130MB, 저장소에는 없음)을 `fly_data/`에 받은 뒤 `fly_circuit.npz`를 지우세요.
 - `Connectivity_783.parquet`: github.com/philshiu/Drosophila_brain_model
