@@ -1,4 +1,4 @@
-// Browser version of main.py: Pong, Tic-tac-toe and Connect Four against real connectome brains.
+// Browser version of main.py: paddle ball, tic-tac-toe and four-in-a-row against real connectome brains.
 (function () {
   "use strict";
   const W = 980, H = 640, GAME_W = 640, FPS = 60;
@@ -141,7 +141,7 @@
   // ------------------------------------------------------------ menu
   function Menu() {
     const modeR = MODES.map((_, k) => ({ x: W / 2 - 465 + k * 315, y: 160, w: 300, h: 60 }));
-    const games = [["1", "퐁", Pong], ["2", "틱택토", TicTacToe], ["3", "사목 (Connect Four)", ConnectFour]];
+    const games = [["1", "패들볼", PaddleBall], ["2", "틱택토", TicTacToe], ["3", "사목", FourInARow]];
     const gameR = games.map((_, k) => ({ x: W / 2 - 180, y: 290 + k * 90, w: 360, h: 66 }));
     const fsR = { x: W - 150, y: 16, w: 134, h: 36 };
     const creditsR = { x: 16, y: 16, w: 150, h: 36 };
@@ -185,10 +185,10 @@
     };
   }
 
-  // ------------------------------------------------------------ pong
+  // ------------------------------------------------------------ paddle ball
   const pongFeatures = (bx, by, vx, vy, py) => [bx * 2 - 1, by * 2 - 1, vx * 40, vy * 40, py * 2 - 1, (by - py) * 2];
 
-  function Pong() {
+  function PaddleBall() {
     const [left, right] = players("pong"); // left (bottom) null = human
     const auto = !!left;
     const PH = 0.18, HUMAN_SPD = 0.02, BRAIN_SPD = 0.018, GOAL = 7;
@@ -281,7 +281,7 @@
         if (!auto) lines.push("사람(아래): A/D 또는 ←/→", "움직이면서 치면 회전이 걸려 휘어요", "같은 방향으로 치면 더 세게, 반대면 약하게");
         const n = Math.round(amt * 10);
         lines.push(`회전 ${"■".repeat(n)}${"□".repeat(10 - n)} ${dir}`, `${GOAL}점 먼저 내면 승리`);
-        drawPanel([left, right], "퐁", lines);
+        drawPanel([left, right], "패들볼", lines);
         if (auto) drawControls(si);
       },
       key(k) {
@@ -410,7 +410,7 @@
     });
   }
 
-  // connect four: board = 6x7 array of rows, row 0 is the top
+  // four in a row: board = 6x7 array of rows, row 0 is the top
   const ROWS = 6, COLS = 7;
   const c4Legal = b => [...Array(COLS).keys()].filter(c => b[0][c] === 0);
   function c4Drop(b, c, p) {
@@ -436,7 +436,7 @@
     const flat = b.flat().map(v => v * p);
     return [...flat.map(v => (v === 1 ? 1 : 0)), ...flat.map(v => (v === -1 ? 1 : 0))];
   }
-  function ConnectFour() {
+  function FourInARow() {
     const S = 78, X0 = (GAME_W - S * COLS) / 2, Y0 = 40;
     return BoardGame("c4", "사목", {
       create: () => Array.from({ length: ROWS }, () => new Array(COLS).fill(0)),

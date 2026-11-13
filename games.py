@@ -2,7 +2,7 @@
 from functools import lru_cache
 import numpy as np
 
-# ---------------------------------------------------------------- Pong
+# ---------------------------------------------------------------- Paddle ball
 # Field is 0..1 on both axes. The brain plays the right paddle at x = 1.
 
 def pong_features(bx, by, vx, vy, py):
@@ -94,7 +94,7 @@ def ttt_dataset():
     return np.array(X), np.array(Y)
 
 
-# ---------------------------------------------------------------- Connect Four
+# ---------------------------------------------------------------- Four in a row
 ROWS, COLS = 6, 7
 
 

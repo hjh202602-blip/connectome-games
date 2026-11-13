@@ -1,4 +1,4 @@
-"""Play Pong, Tic-tac-toe and Connect Four against a real connectome brain (worm or fly)."""
+"""Play paddle ball, tic-tac-toe and four-in-a-row against a real connectome brain (worm or fly)."""
 import numpy as np
 import pygame as pg
 import games as g
@@ -122,7 +122,7 @@ def handle_controls(ev, speed_i):
 def loading(name):
     screen.fill(BG)
     text(f"{name}: {MODES[current[0]][0]} 준비 중...", F_MID, FG, (W // 2, H // 2), center=True)
-    text("(처음 한 번만 학습해요. 퐁·사목은 1~3분 걸려요)", F_SMALL, DIM, (W // 2, H // 2 + 40), center=True)
+    text("(처음 한 번만 학습해요. 패들볼·사목은 1~3분 걸려요)", F_SMALL, DIM, (W // 2, H // 2 + 40), center=True)
     pg.display.flip()
     pg.event.pump()
 
@@ -133,9 +133,9 @@ def quit_check(ev):
     return ev.type == pg.KEYDOWN and ev.key == pg.K_ESCAPE
 
 
-# ---------------------------------------------------------------- Pong
-def play_pong():
-    loading("퐁")
+# ---------------------------------------------------------------- Paddle ball
+def play_paddle():
+    loading("패들볼")
     left, right = players("pong")  # left (bottom) None = human on A/D
     auto = left is not None
     PH, HUMAN_SPD, BRAIN_SPD, GOAL = 0.18, 0.02, 0.018, 7
@@ -258,7 +258,7 @@ def play_pong():
                       "같은 방향으로 치면 더 세게, 반대면 약하게"]
         lines += [f"회전 {'■' * round(spin_amt * 10)}{'□' * (10 - round(spin_amt * 10))} {curve_dir}",
                   f"{GOAL}점 먼저 내면 승리"]
-        draw_panel([left, right], "퐁", lines)
+        draw_panel([left, right], "패들볼", lines)
         if auto:
             draw_controls(speed_i)
         pg.display.flip()
@@ -403,7 +403,7 @@ def _run(seats, title, new, legal, play, features, mouse, draw, blue_side):
 
 # ---------------------------------------------------------------- Menu
 def menu():
-    items = [("1", "퐁", play_pong), ("2", "틱택토", play_ttt), ("3", "사목 (Connect Four)", play_c4)]
+    items = [("1", "패들볼", play_paddle), ("2", "틱택토", play_ttt), ("3", "사목", play_c4)]
     while True:
         rects, brain_rects = [], []
         screen.fill(BG)
