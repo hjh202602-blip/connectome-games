@@ -9,11 +9,43 @@
   body { display: flex; align-items: center; justify-content: center; }
   canvas { display: block; touch-action: none; }
   #loading { position: absolute; color: #e6e8f0; font: 20px "Malgun Gothic", sans-serif; }
+  #credits { max-width: 640px; background: #1a1d28; color: #e6e8f0; border: 1px solid #3c4150;
+             border-radius: 12px; padding: 20px 26px; font: 15px/1.6 "Malgun Gothic", sans-serif; }
+  #credits::backdrop { background: rgba(0, 0, 0, 0.6); }
+  #credits h2 { font-size: 20px; margin: 0 0 8px; }
+  #credits h3 { font-size: 16px; margin: 16px 0 4px; color: #ff9646; }
+  #credits ul { margin: 4px 0; padding-left: 20px; }
+  #credits a { color: #5aaaff; }
+  #credits .small { color: #9aa0b0; font-size: 13px; }
+  #credits button { margin-top: 14px; padding: 6px 18px; font: inherit; color: #e6e8f0;
+                    background: #2d3244; border: 0; border-radius: 8px; cursor: pointer; }
 </style>
 </head>
 <body>
 <div id="loading">뇌 데이터를 불러오는 중...</div>
 <canvas id="c" width="980" height="640"></canvas>
+<dialog id="credits">
+  <h2>데이터 출처와 라이선스</h2>
+  <p>게임 코드는 이 프로젝트에서 직접 작성했습니다. 뇌 배선 데이터에는 원본의 라이선스가 적용됩니다.</p>
+  <h3>초파리 뇌: FlyWire (CC BY-NC 4.0)</h3>
+  <p>초파리 회로는 <a href="https://flywire.ai" target="_blank" rel="noopener">FlyWire</a> 공개 데이터(783 버전)로 만든 2차 저작물입니다.
+    원본 라이선스인 <a href="https://creativecommons.org/licenses/by-nc/4.0/" target="_blank" rel="noopener">CC BY-NC 4.0</a>을 따르며, 비상업적 용도로만 쓸 수 있습니다.</p>
+  <p class="small">변경 사항: 원본 약 14만 뉴런에서 감각 200·중간 1,600·하행 200개를 골라냈고, 시냅스 수를 log1p로 변환한 뒤 뉴런마다 받는 입력의 총세기를 같게 정규화했습니다.
+    시냅스 부호는 <a href="https://github.com/philshiu/Drosophila_brain_model" target="_blank" rel="noopener">Drosophila_brain_model</a>(MIT)에서 가져왔습니다.</p>
+  <ul class="small">
+    <li>Dorkenwald, S. et al. (2024). Neuronal wiring diagram of an adult brain. <i>Nature</i> 634, 124–138.</li>
+    <li>Schlegel, P. et al. (2024). Whole-brain annotation and multi-connectome cell typing of <i>Drosophila</i>. <i>Nature</i> 634, 139–152.</li>
+    <li>Shiu, P. K. et al. (2024). A <i>Drosophila</i> computational brain model reveals sensorimotor processing. <i>Nature</i> 634, 210–219.</li>
+    <li>Zheng, Z. et al. (2018). A complete electron microscopy volume of the brain of adult <i>Drosophila melanogaster</i>. <i>Cell</i> 174, 730–743.</li>
+  </ul>
+  <h3>꼬마선충 뇌: Cook et al. 2019</h3>
+  <p class="small">연결 데이터는 OpenWorm <a href="https://github.com/openworm/ConnectomeToolbox" target="_blank" rel="noopener">ConnectomeToolbox</a>(MIT)를 통해 받았습니다.
+    시냅스 수를 log1p로 변환하고 GABA 뉴런을 억제성으로 처리했습니다.</p>
+  <ul class="small">
+    <li>Cook, S. J. et al. (2019). Whole-animal connectomes of both <i>Caenorhabditis elegans</i> sexes. <i>Nature</i> 571, 63–71.</li>
+  </ul>
+  <form method="dialog"><button>닫기</button></form>
+</dialog>
 <script src="brains.js"></script>
 <script src="brain.js"></script>
 <script src="game.js"></script>

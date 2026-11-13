@@ -30,6 +30,7 @@
   canvas.addEventListener("mousemove", e => Object.assign(mouse, toCanvas(e)));
   canvas.addEventListener("pointerdown", e => { const p = toCanvas(e); Object.assign(mouse, p); scene.click && scene.click(p.x, p.y); });
   window.addEventListener("keydown", e => {
+    if (document.getElementById("credits").open) return; // let the credits dialog handle keys
     if (["Tab", " ", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) e.preventDefault();
     held.add(e.key.toLowerCase());
     scene.key && scene.key(e.key);
@@ -143,6 +144,7 @@
     const games = [["1", "퐁", Pong], ["2", "틱택토", TicTacToe], ["3", "사목 (Connect Four)", ConnectFour]];
     const gameR = games.map((_, k) => ({ x: W / 2 - 180, y: 290 + k * 90, w: 360, h: 66 }));
     const fsR = { x: W - 150, y: 16, w: 134, h: 36 };
+    const creditsR = { x: 16, y: 16, w: 150, h: 36 };
     return {
       draw() {
         ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
@@ -160,11 +162,17 @@
           text(`${key}.  ${label}`, F_MID, FG, r.x + r.w / 2, r.y + r.h / 2, true);
         });
         button(fsR, document.fullscreenElement ? "창 모드" : "전체화면", F_SMALL, "#2d3244", "#3c4258");
-        text("TAB: 모드 바꾸기 · 숫자키 또는 클릭: 게임 선택", F_SMALL, DIM, W / 2, H - 30, true);
+        button(creditsR, "출처·라이선스", F_SMALL, "#2d3244", "#3c4258");
+        text("TAB: 모드 바꾸기 · 숫자키 또는 클릭: 게임 선택", F_SMALL, DIM, W / 2, H - 52, true);
+        text("초파리 데이터: FlyWire (CC BY-NC 4.0) · 꼬마선충 데이터: Cook et al. 2019 · 비상업적 사용",
+             `13px ${FONT}`, DIM, W / 2, H - 22, true);
       },
       click(x, y) {
         modeR.forEach((r, k) => { if (inRect(r, x, y)) mode = k; });
         gameR.forEach((r, k) => { if (inRect(r, x, y)) go(games[k][2]()); });
+        if (inRect(creditsR, x, y)) {
+          document.getElementById("credits").showModal();
+        }
         if (inRect(fsR, x, y)) {
           if (document.fullscreenElement) document.exitFullscreen();
           else document.documentElement.requestFullscreen().catch(() => {});

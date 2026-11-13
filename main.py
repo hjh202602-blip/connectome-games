@@ -23,7 +23,7 @@ def font(size, bold=False):
             return f
 
 
-F_BIG, F_MID, F_SMALL = font(40, True), font(24, True), font(17)
+F_BIG, F_MID, F_SMALL, F_TINY = font(40, True), font(24, True), font(17), font(13)
 BRAINS = [("worm", "꼬마선충"), ("fly", "초파리")]
 MODES = [("사람 vs 꼬마선충", "C. elegans 뉴런 302개 전부 (Cook 2019)"),
          ("사람 vs 초파리", "FlyWire 초파리 뇌에서 잘라낸 뉴런 2,000개 회로 (2024)"),
@@ -424,7 +424,9 @@ def menu():
             rects.append((r, fn))
             pg.draw.rect(screen, (45, 50, 68) if r.collidepoint(mouse) else (32, 36, 50), r, border_radius=12)
             text(f"{key}.  {label}", F_MID, FG, r.center, center=True)
-        text("TAB: 모드 바꾸기 · 숫자키 또는 클릭: 게임 선택 · ESC: 종료", F_SMALL, DIM, (W // 2, H - 30), center=True)
+        text("TAB: 모드 바꾸기 · 숫자키 또는 클릭: 게임 선택 · ESC: 종료", F_SMALL, DIM, (W // 2, H - 52), center=True)
+        text("초파리 데이터: FlyWire (CC BY-NC 4.0) · 꼬마선충 데이터: Cook et al. 2019 · 비상업적 사용 · 자세한 출처는 README",
+             F_TINY, DIM, (W // 2, H - 22), center=True)
         pg.display.flip()
         for ev in pg.event.get():
             if quit_check(ev):
