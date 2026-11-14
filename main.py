@@ -28,34 +28,33 @@ def font(size, bold=False):
 F_BIG, F_MID, F_SMALL, F_TINY = font(40, True), font(24, True), font(17), font(13)
 F_MODE = font(18, True)
 BRAINS = [("worm", "꼬마선충"), ("fly", "초파리")]
-# (label, description, uses my AI, (blue, orange)); None = human
-MODES = [("사람 vs 꼬마선충", "C. elegans 뉴런 302개 전부 (Cook 2019)", False, (None, "worm")),
-         ("사람 vs 초파리", "FlyWire 초파리 뇌에서 잘라낸 뉴런 2,000개 회로 (2024)", False, (None, "fly")),
-         ("사람 vs 내 AI", "스스로 연습해 회전 공을 읽고 거는 신경망 (python train_ai.py)", True, (None, "ai")),
-         ("꼬마선충 vs 초파리", "두 뇌끼리 대결을 구경합니다. 배속 조절, 그만 보기 버튼이 있어요", False, ("worm", "fly")),
-         ("내 AI vs 초파리", "내 AI(파랑)와 초파리 뇌(주황)의 대결을 구경합니다", True, ("ai", "fly"))]
+# (label, description, (blue, orange)); None = human, "v1"/"v2" = my AI
+MODES = [("사람 vs 꼬마선충", "C. elegans 뉴런 302개 전부 (Cook 2019)", (None, "worm")),
+         ("사람 vs 초파리", "FlyWire 초파리 뇌에서 잘라낸 뉴런 2,000개 회로 (2024)", (None, "fly")),
+         ("사람 vs 내 AI v1", "혼자 연습해 회전 공을 읽고 거는 신경망 (python train_ai.py v1)", (None, "v1")),
+         ("사람 vs 내 AI v2", "v1이 꼬마선충·초파리 뇌와 겨루며 더 배운 신경망 (python train_ai.py v2)", (None, "v2")),
+         ("꼬마선충 vs 초파리", "두 뇌끼리 대결을 구경합니다. 배속 조절, 그만 보기 버튼이 있어요", ("worm", "fly")),
+         ("내 AI v2 vs 초파리", "내 AI v2(파랑)와 초파리 뇌(주황)의 대결을 구경합니다", ("v2", "fly")),
+         ("내 AI v1 vs v2", "내 AI 두 버전(파랑 v1, 주황 v2)의 대결을 구경합니다", ("v1", "v2"))]
 current = [0]  # index into MODES
-MY_AI = [ai.load()]
 
 
 def players(game):
-    """(blue player, orange player). None = human. Blue is the left paddle / first seat."""
+    """(blue player, orange player). None = human. Blue is the left paddle / first seat.
+    A missing (untrained) AI comes back as the string of its version."""
     def get(k):
         if k is None:
             return None
-        if k == "ai":
-            MY_AI[0] = ai.load()  # pick up a freshly trained AI
-            if MY_AI[0]:
-                MY_AI[0].prev = 0.0
-            return MY_AI[0]
+        if k in ai.VERSIONS:
+            return ai.load(k) or k  # loaded fresh each game, so a newly trained AI shows up
         return load_or_train(k, game)
-    return tuple(get(k) for k in MODES[current[0]][3])
+    return tuple(get(k) for k in MODES[current[0]][2])
 
 
-def no_ai():
+def no_ai(ver):
     screen.fill(BG)
-    text("아직 학습된 내 AI가 없어요", F_MID, FG, (W // 2, H // 2 - 20), center=True)
-    text("터미널에서 python train_ai.py 를 실행해 학습시킨 뒤 다시 하세요 (아무 키나 누르면 메뉴로)",
+    text(f"아직 학습된 내 AI {ver}가 없어요", F_MID, FG, (W // 2, H // 2 - 20), center=True)
+    text(f"터미널에서 python train_ai.py {ver} 를 실행해 학습시킨 뒤 다시 하세요 (아무 키나 누르면 메뉴로)",
          F_SMALL, DIM, (W // 2, H // 2 + 24), center=True)
     pg.display.flip()
     while True:
@@ -176,8 +175,9 @@ def decide(p, ball, side, me, opp):
 def play_paddle():
     loading("패들볼")
     left, right = players("pong")  # left (bottom) None = human on A/D
-    if MODES[current[0]][2] and MY_AI[0] is None:
-        no_ai()
+    missing = [p for p in (left, right) if isinstance(p, str)]
+    if missing:
+        no_ai(missing[0])
         return
     auto = left is not None
     PH, GOAL = pd.PH, 7
@@ -302,15 +302,16 @@ def menu():
              F_SMALL, DIM, (W // 2, 120), center=True)
         mouse = pg.mouse.get_pos()
         for k, (label, *_) in enumerate(MODES):
-            r = pg.Rect(W // 2 - 480 + k * 194, 160, 184, 60)
+            row, col = divmod(k, 4)
+            r = pg.Rect(W // 2 - 470 + col * 236 + row * 118, 150 + row * 64, 226, 54)
             brain_rects.append(r)
             on = k == current[0]
             pg.draw.rect(screen, (70, 50, 30) if on else (32, 36, 50), r, border_radius=12)
             pg.draw.rect(screen, BRAIN_C if on else (60, 65, 80), r, 2, border_radius=12)
             text(label, F_MODE, FG if on else DIM, r.center, center=True)
-        text(MODES[current[0]][1], F_SMALL, DIM, (W // 2, 240), center=True)
+        text(MODES[current[0]][1], F_SMALL, DIM, (W // 2, 296), center=True)
         for k, (key, label, fn) in enumerate(items):
-            r = pg.Rect(W // 2 - 180, 290 + k * 90, 360, 66)
+            r = pg.Rect(W // 2 - 180, 340 + k * 90, 360, 66)
             rects.append((r, fn))
             pg.draw.rect(screen, (45, 50, 68) if r.collidepoint(mouse) else (32, 36, 50), r, border_radius=12)
             text(f"{key}.  {label}", F_MID, FG, r.center, center=True)

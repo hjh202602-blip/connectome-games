@@ -137,27 +137,29 @@
   const MODES = [
     ["사람 vs 꼬마선충", "C. elegans 뉴런 302개 전부를 쓴 뇌 (Cook 2019)", [null, "worm"]],
     ["사람 vs 초파리", "FlyWire 초파리 뇌에서 잘라낸 뉴런 2,000개 회로 (2024)", [null, "fly"]],
-    ["사람 vs 내 AI", "스스로 연습해서 회전 공을 읽고, 회전을 걸어 치는 신경망", [null, "ai"]],
+    ["사람 vs 내 AI v1", "혼자 연습해서 회전 공을 읽고, 회전을 걸어 치는 신경망", [null, "v1"]],
+    ["사람 vs 내 AI v2", "v1이 꼬마선충·초파리 뇌와 겨루며 더 배운 신경망", [null, "v2"]],
     ["꼬마선충 vs 초파리", "두 뇌끼리 대결을 구경합니다. 배속 조절과 그만 보기가 있어요", ["worm", "fly"]],
-    ["내 AI vs 초파리", "내 AI(파랑)와 초파리 뇌(주황)의 대결을 구경합니다", ["ai", "fly"]],
-  ];
+    ["내 AI v2 vs 초파리", "내 AI v2(파랑)와 초파리 뇌(주황)의 대결을 구경합니다", ["v2", "fly"]],
+    ["내 AI v1 vs v2", "내 AI 두 버전(파랑 v1, 주황 v2)의 대결을 구경합니다", ["v1", "v2"]],
+  ].filter(m => m[2].every(k => !/^v\d$/.test(k || "") || (window.AI_DATA || {})[k])); // hide untrained AIs
   let mode = 0;
   function players(game) {
-    return MODES[mode][2].map(k => (k === null ? null : k === "ai" ? makeAI() : BR[k][game]));
+    return MODES[mode][2].map(k => (k === null ? null : /^v\d$/.test(k) ? makeAI(k) : BR[k][game]));
   }
 
   // ------------------------------------------------------------ my AI (ordinary neural net, see ai.py)
   // 9 inputs -> 32 tanh -> 32 tanh -> 1 tanh. Weights come from web/ai.js (python export_web.py).
-  function makeAI() {
-    const d = window.AI_DATA, H = d.hidden, th = d.theta, n = d.nIn;
+  function makeAI(ver) {
+    const d = window.AI_DATA[ver], H = d.hidden, th = d.theta, n = d.nIn;
     let k = 0;
     const take = m => { const a = th.slice(k, k + m); k += m; return a; };
     const W1 = take(n * H), b1 = take(H), W2 = take(H * H), b2 = take(H), W3 = take(H), b3 = take(1)[0];
     const lastState = new Float64Array(2 * H);
     return {
-      wiring: { label: "내 AI", N: 2 * H, order: [...Array(2 * H).keys()],
+      wiring: { label: `내 AI ${ver}`, N: 2 * H, order: [...Array(2 * H).keys()],
                 info: [`일반 신경망 ${n} → ${H} → ${H} → 1 (커넥톰 아님)`,
-                       `스스로 연습 ${d.gens}세대 · 경기 ${d.games.toLocaleString()}판`,
+                       `${ver === "v1" ? "스스로 연습" : "v1에서 곤충 뇌와 겨루며 연습"} · 모두 ${d.gens}세대, 경기 ${d.games.toLocaleString()}판`,
                        "회전·상대 위치·내 지난 움직임까지 봄"] },
       lastState, prev: 0,
       act(x) {
