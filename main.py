@@ -138,7 +138,7 @@ def play_paddle():
     loading("패들볼")
     left, right = players("pong")  # left (bottom) None = human on A/D
     auto = left is not None
-    PH, HUMAN_SPD, BRAIN_SPD, GOAL = 0.18, 0.02, 0.018, 7
+    PH, BRAIN_SPD, GOAL = 0.18, 0.018, 7
     # Spin: a paddle that is moving when it hits the ball brushes it and makes it spin.
     # The ball is first pushed the way the paddle moved, then curves back the other way
     # (Magnus effect, like a sidespin shot in table tennis).
@@ -146,19 +146,28 @@ def play_paddle():
     # as the spin adds to it, and moving the other way cancels it or flips it.
     PUSH, CURVE, SPIN_DECAY, VY_MAX = 0.4, 0.012, 0.993, 0.03
     SPIN_GAIN, SPIN_MAX = 1.2, 0.05
-    st = dict(score=[0, 0], hy=0.5, by=0.5, serve_dir=1, ball=None, winner=None,
+    # The ball gets faster every time it crosses the centre line. Spin and sideways speed
+    # limits grow with it ("level" = ball speed / serve speed).
+    SERVE_V, CROSS_ACC, V_MAX = 0.01, 1.05, 0.03
+    # Human paddle has inertia: keys accelerate it, friction slows it down.
+    HUMAN_ACC, FRICTION = 0.0025, 0.88
+    st = dict(score=[0, 0], hy=0.5, hv=0.0, by=0.5, serve_dir=1, ball=None, winner=None,
               angle=0.0, trail=[], wait=0)
     speed_i = 0
 
     def serve(d):
         a = np.random.uniform(-0.6, 0.6)
-        return [0.5, 0.5, d * 0.01 * np.cos(a), 0.01 * np.sin(a), 0.0]
+        return [0.5, 0.5, d * SERVE_V * np.cos(a), SERVE_V * np.sin(a), 0.0]
 
     def step(keys):
         old_h, old_b = st["hy"], st["by"]
         ball = st["ball"]
         if left is None:
-            st["hy"] += HUMAN_SPD * ((keys[pg.K_d] or keys[pg.K_RIGHT]) - (keys[pg.K_a] or keys[pg.K_LEFT]))
+            push = (keys[pg.K_d] or keys[pg.K_RIGHT]) - (keys[pg.K_a] or keys[pg.K_LEFT])
+            st["hv"] = (st["hv"] + HUMAN_ACC * push) * FRICTION
+            st["hy"] += st["hv"]
+            if not PH / 2 < st["hy"] < 1 - PH / 2:
+                st["hv"] = 0.0  # stops dead at the wall
         elif ball:
             # the brains were trained as the right paddle, so the left one sees a mirrored court
             bx, byy, vx, vy, _ = ball
@@ -177,21 +186,25 @@ def play_paddle():
         out = right(g.pong_features(bx, byy, vx, vy, st["by"]))[0]
         st["by"] = min(max(st["by"] + BRAIN_SPD * float(np.clip(out, -1, 1)), PH / 2), 1 - PH / 2)
         vel = {-1: st["hy"] - old_h, 1: st["by"] - old_b}  # paddle speed this frame
-        vy = float(np.clip(vy - spin * CURVE, -VY_MAX, VY_MAX))  # curve
+        level = abs(vx) / SERVE_V
+        vy_max, spin_max = VY_MAX * level, SPIN_MAX * level
+        vy = float(np.clip(vy - spin * CURVE, -vy_max, vy_max))  # curve
         spin *= SPIN_DECAY
         st["angle"] += spin * 30
+        if (bx - 0.5) * (bx + vx - 0.5) < 0:  # crossing the centre line -> speed up
+            k = min(abs(vx) * CROSS_ACC, V_MAX) / abs(vx)
+            vx, vy = vx * k, vy * k
         bx, byy = bx + vx, byy + vy
         if byy < 0 or byy > 1:
             vy, byy = -vy, min(max(byy, 0), 1)
             spin *= 0.7  # the wall rubs some spin off
         for px, py, side in ((0.03, st["hy"], -1), (0.97, st["by"], 1)):
             if (bx - px) * side >= 0 and vx * side > 0 and abs(byy - py) < PH / 2 + 0.01:
-                speed = min(abs(vx) * 1.06, 0.02)
-                vx = -side * speed
+                vx = -vx
                 pv = vel[side]
-                vy = float(np.clip(vy + (byy - py) * 0.06 + pv * PUSH, -VY_MAX, VY_MAX))
+                vy = float(np.clip(vy + (byy - py) * 0.06 + pv * PUSH, -vy_max, vy_max))
                 # same direction as the spin -> faster spin; opposite -> weaker or reversed
-                spin = float(np.clip(spin + pv * SPIN_GAIN, -SPIN_MAX, SPIN_MAX))
+                spin = float(np.clip(spin + pv * SPIN_GAIN, -spin_max, spin_max))
                 bx = px
         st["ball"] = [bx, byy, vx, vy, spin]
         st["trail"] = (st["trail"] + [(bx, byy)])[-14:]
@@ -232,7 +245,8 @@ def play_paddle():
         ph = PH * GAME_W
         pg.draw.rect(screen, HUMAN_C, (hy * GAME_W - ph / 2, 0.97 * H, ph, 12))
         pg.draw.rect(screen, BRAIN_C, (by_ * GAME_W - ph / 2, 0.03 * H - 12, ph, 12))
-        spin_amt = min(abs(ball[4]) / SPIN_MAX, 1) if ball else 0
+        level = abs(ball[2]) / SERVE_V if ball else 1.0
+        spin_amt = min(abs(ball[4]) / (SPIN_MAX * level), 1) if ball else 0
         # positive spin bends the ball toward smaller y = leftwards on screen
         curve_dir = "" if not ball or spin_amt < 0.05 else ("←" if ball[4] > 0 else "→")
         if ball:
@@ -254,9 +268,10 @@ def play_paddle():
             text("SPACE: 서브", F_MID, DIM, (GAME_W // 2, H // 2), center=True)
         lines = [f"{name(left)}(파랑) vs {name(right)}(주황)"]
         if not auto:
-            lines += ["사람(아래): A/D 또는 ←/→", "움직이면서 치면 회전이 걸려 휘어요",
+            lines += ["사람(아래): A/D 또는 ←/→ (관성 있음)","움직이면서 치면 회전이 걸려 휘어요",
                       "같은 방향으로 치면 더 세게, 반대면 약하게"]
-        lines += [f"회전 {'■' * round(spin_amt * 10)}{'□' * (10 - round(spin_amt * 10))} {curve_dir}",
+        lines += [f"공 속도 ×{level:.1f} (중앙선 넘을 때마다 빨라짐)",
+                  f"회전 {'■' * round(spin_amt * 10)}{'□' * (10 - round(spin_amt * 10))} {curve_dir}",
                   f"{GOAL}점 먼저 내면 승리"]
         draw_panel([left, right], "패들볼", lines)
         if auto:
