@@ -1,4 +1,5 @@
-"""Play paddle ball against a real connectome brain (worm or fly) or my own trained AI."""
+"""Play paddle ball against a real connectome brain (worm or fly) or the trained AI,
+or watch any two of them play each other."""
 import numpy as np
 import pygame as pg
 import ai
@@ -27,16 +28,22 @@ def font(size, bold=False):
 
 F_BIG, F_MID, F_SMALL, F_TINY = font(40, True), font(24, True), font(17), font(13)
 F_MODE = font(18, True)
-BRAINS = [("worm", "꼬마선충"), ("fly", "초파리")]
-# (label, description, (blue, orange)); None = human, "v1"/"v2" = my AI
-MODES = [("사람 vs 꼬마선충", "C. elegans 뉴런 302개 전부 (Cook 2019)", (None, "worm")),
-         ("사람 vs 초파리", "FlyWire 초파리 뇌에서 잘라낸 뉴런 2,000개 회로 (2024)", (None, "fly")),
-         ("사람 vs 내 AI v1", "혼자 연습해 회전 공을 읽고 거는 신경망 (python train_ai.py v1)", (None, "v1")),
-         ("사람 vs 내 AI v2", "v1이 꼬마선충·초파리 뇌와 겨루며 더 배운 신경망 (python train_ai.py v2)", (None, "v2")),
-         ("꼬마선충 vs 초파리", "두 뇌끼리 대결을 구경합니다. 배속 조절, 그만 보기 버튼이 있어요", ("worm", "fly")),
-         ("내 AI v2 vs 초파리", "내 AI v2(파랑)와 초파리 뇌(주황)의 대결을 구경합니다", ("v2", "fly")),
-         ("내 AI v1 vs v2", "내 AI 두 버전(파랑 v1, 주황 v2)의 대결을 구경합니다", ("v1", "v2"))]
-current = [0]  # index into MODES
+# who can play: insect brains and every version of the trained AI
+PLAYERS = {"worm": ("꼬마선충", "C. elegans 뉴런 302개 전부 (Cook 2019)"),
+           "fly": ("초파리", "FlyWire 초파리 뇌에서 잘라낸 뉴런 2,000개 회로 (2024)"),
+           "v1": ("학습 AI v1", "혼자 연습해 회전 공을 읽고, 상대에게서 먼 쪽으로 휘어 치는 신경망"),
+           "v2": ("학습 AI v2", "v1이 꼬마선충·초파리 뇌와 겨루며 더 배운 신경망")}
+# menu tabs: (label, what the choice buttons pick)
+TABS = [("사람 vs 곤충 뇌", ["worm", "fly"]),
+        ("사람 vs 학습 AI", list(ai.VERSIONS)),
+        ("대결", list(PLAYERS))]
+sel = {"tab": 0, 0: "worm", 1: "v1", "blue": "worm", "orange": "v1"}
+
+
+def pair():
+    """(blue, orange) for the current menu choice; None = human."""
+    t = sel["tab"]
+    return (sel["blue"], sel["orange"]) if t == 2 else (None, sel[t])
 
 
 def players(game):
@@ -48,12 +55,12 @@ def players(game):
         if k in ai.VERSIONS:
             return ai.load(k) or k  # loaded fresh each game, so a newly trained AI shows up
         return load_or_train(k, game)
-    return tuple(get(k) for k in MODES[current[0]][2])
+    return tuple(get(k) for k in pair())
 
 
 def no_ai(ver):
     screen.fill(BG)
-    text(f"아직 학습된 내 AI {ver}가 없어요", F_MID, FG, (W // 2, H // 2 - 20), center=True)
+    text(f"아직 학습된 학습 AI {ver}가 없어요", F_MID, FG, (W // 2, H // 2 - 20), center=True)
     text(f"터미널에서 python train_ai.py {ver} 를 실행해 학습시킨 뒤 다시 하세요 (아무 키나 누르면 메뉴로)",
          F_SMALL, DIM, (W // 2, H // 2 + 24), center=True)
     pg.display.flip()
@@ -149,7 +156,7 @@ def handle_controls(ev, speed_i):
 
 def loading(name):
     screen.fill(BG)
-    text(f"{name}: {MODES[current[0]][0]} 준비 중...", F_MID, FG, (W // 2, H // 2), center=True)
+    text(f"{name}: {' vs '.join('사람' if k is None else PLAYERS[k][0] for k in pair())} 준비 중...", F_MID, FG, (W // 2, H // 2), center=True)
     text("(처음 한 번만 학습해요. 1~3분 걸려요)", F_SMALL, DIM, (W // 2, H // 2 + 40), center=True)
     pg.display.flip()
     pg.event.pump()
@@ -162,11 +169,16 @@ def quit_check(ev):
 
 
 # ---------------------------------------------------------------- Paddle ball
-def decide(p, ball, side, me, opp):
-    """Paddle move (-1..1) for a brain or my AI playing on `side` (+1 orange/top, -1 blue/bottom)."""
+def move_paddle(p, ball, side, me, opp):
+    """New paddle position for a brain or my AI playing on `side` (+1 orange/top, -1 blue/bottom).
+    My AI moves with the same inertia as the human; the insect brains move directly."""
     b = np.asarray(ball, float)
     if isinstance(p, ai.PaddleAI):
-        return p.act(b, side, me, opp)
+        return p.move(b, side, me, opp)
+    return float(pd.move(me, decide(p, b, side, me))[0])
+
+
+def decide(p, b, side, me):
     # the brains were trained as the orange paddle, so the blue one sees a mirrored court
     bx, by, vx, vy, _ = pd.view(b, side)
     return float(p(g.pong_features(bx, by, vx, vy, me))[0])
@@ -185,7 +197,7 @@ def play_paddle():
     # brushes it and makes it spin; the ball curves (Magnus effect) and the more it
     # spins, the faster it flies.
     # Human paddle has inertia: keys accelerate it, friction slows it down.
-    HUMAN_ACC, FRICTION = 0.0025, 0.88
+    HUMAN_ACC, FRICTION = pd.HUMAN_ACC, pd.FRICTION
     st = dict(score=[0, 0], hy=0.5, hv=0.0, by=0.5, serve_dir=1, ball=None, winner=None,
               angle=0.0, trail=[], wait=0)
     speed_i = 0
@@ -204,7 +216,7 @@ def play_paddle():
                 st["hv"] = 0.0  # stops dead at the wall
             st["hy"] = min(max(st["hy"], PH / 2), 1 - PH / 2)
         elif ball:
-            st["hy"] = float(pd.move(st["hy"], decide(left, ball, -1, st["hy"], st["by"]))[0])
+            st["hy"] = move_paddle(left, ball, -1, st["hy"], st["by"])
         if auto and ball is None:
             st["wait"] += 1
             if st["winner"] and st["wait"] > 180:
@@ -213,7 +225,7 @@ def play_paddle():
                 st["ball"], st["trail"], st["wait"] = serve(st["serve_dir"]), [], 0
         if not ball:
             return
-        st["by"] = float(pd.move(st["by"], decide(right, ball, 1, st["by"], st["hy"]))[0])
+        st["by"] = move_paddle(right, ball, 1, st["by"], st["hy"])
         nb, scored, _ = pd.step(np.array([ball]), st["hy"], st["by"], st["hy"] - old_h, st["by"] - old_b)
         ball = [float(v) for v in nb[0]]
         st["angle"] += ball[4] * 30
@@ -292,30 +304,54 @@ def play_paddle():
 
 
 # ---------------------------------------------------------------- Menu
+def button(r, label, on, f=F_MODE):
+    pg.draw.rect(screen, (70, 50, 30) if on else (32, 36, 50), r, border_radius=12)
+    pg.draw.rect(screen, BRAIN_C if on else (60, 65, 80), r, 2, border_radius=12)
+    text(label, f, FG if on else DIM, r.center, center=True)
+
+
+def choice_row(y, keys, chosen, label=None):
+    """A row of player buttons centred at height y. Returns [(rect, key)]."""
+    w, gap = 200, 14
+    x0 = W // 2 - (len(keys) * (w + gap) - gap) // 2 + (50 if label else 0)
+    if label:
+        text(label, F_SMALL, DIM, (x0 - 16 - F_SMALL.size(label)[0], y + 15))
+    out = []
+    for k, key in enumerate(keys):
+        r = pg.Rect(x0 + k * (w + gap), y, w, 46)
+        button(r, PLAYERS[key][0], key == chosen)
+        out.append((r, key))
+    return out
+
+
 def menu():
-    items = [("1", "패들볼", play_paddle)]
     while True:
-        rects, brain_rects = [], []
         screen.fill(BG)
-        text("진짜 뇌와 대결", F_BIG, FG, (W // 2, 70), center=True)
-        text("실제 커넥톰의 배선을 그대로 쓰고, 수를 읽어내는 출력층만 학습시킨 AI입니다.",
-             F_SMALL, DIM, (W // 2, 120), center=True)
+        text("진짜 뇌와 대결", F_BIG, FG, (W // 2, 60), center=True)
+        text("실제 커넥톰의 배선을 그대로 쓴 곤충 뇌, 그리고 스스로 연습한 학습 AI와 패들볼을 칩니다.",
+             F_SMALL, DIM, (W // 2, 106), center=True)
         mouse = pg.mouse.get_pos()
-        for k, (label, *_) in enumerate(MODES):
-            row, col = divmod(k, 4)
-            r = pg.Rect(W // 2 - 470 + col * 236 + row * 118, 150 + row * 64, 226, 54)
-            brain_rects.append(r)
-            on = k == current[0]
-            pg.draw.rect(screen, (70, 50, 30) if on else (32, 36, 50), r, border_radius=12)
-            pg.draw.rect(screen, BRAIN_C if on else (60, 65, 80), r, 2, border_radius=12)
-            text(label, F_MODE, FG if on else DIM, r.center, center=True)
-        text(MODES[current[0]][1], F_SMALL, DIM, (W // 2, 296), center=True)
-        for k, (key, label, fn) in enumerate(items):
-            r = pg.Rect(W // 2 - 180, 340 + k * 90, 360, 66)
-            rects.append((r, fn))
-            pg.draw.rect(screen, (45, 50, 68) if r.collidepoint(mouse) else (32, 36, 50), r, border_radius=12)
-            text(f"{key}.  {label}", F_MID, FG, r.center, center=True)
-        text("TAB: 모드 바꾸기 · 1 또는 클릭: 게임 시작 · ESC: 종료", F_SMALL, DIM, (W // 2, H - 52), center=True)
+        t = sel["tab"]
+        tab_rects = []
+        for k, (label, _) in enumerate(TABS):
+            r = pg.Rect(W // 2 - 360 + k * 244, 140, 232, 52)
+            tab_rects.append(r)
+            button(r, label, k == t, F_MID)
+        pg.draw.line(screen, (60, 65, 80), (W // 2 - 360, 204), (W // 2 + 360, 204), 1)
+        if t == 2:
+            picks = [(rk, "blue", key) for rk, key in choice_row(222, TABS[2][1], sel["blue"], "파랑(아래)")]
+            picks += [(rk, "orange", key) for rk, key in choice_row(282, TABS[2][1], sel["orange"], "주황(위)")]
+            desc = f"{PLAYERS[sel['blue']][0]}(파랑) vs {PLAYERS[sel['orange']][0]}(주황) · 대결을 구경합니다. 배속 조절, 그만 보기 버튼이 있어요"
+        else:
+            text("상대 고르기", F_SMALL, DIM, (W // 2, 230), center=True)
+            picks = [(rk, t, key) for rk, key in choice_row(252, TABS[t][1], sel[t])]
+            desc = PLAYERS[sel[t]][1]
+        text(desc, F_SMALL, DIM, (W // 2, 352), center=True)
+        go = pg.Rect(W // 2 - 180, 390, 360, 66)
+        pg.draw.rect(screen, (45, 50, 68) if go.collidepoint(mouse) else (32, 36, 50), go, border_radius=12)
+        pg.draw.rect(screen, HUMAN_C, go, 2, border_radius=12)
+        text("패들볼 시작", F_MID, FG, go.center, center=True)
+        text("TAB: 탭 바꾸기 · 1 / Enter 또는 클릭: 시작 · ESC: 종료", F_SMALL, DIM, (W // 2, H - 52), center=True)
         text("초파리 데이터: FlyWire (CC BY-NC 4.0) · 꼬마선충 데이터: Cook et al. 2019 · 비상업적 사용 · 자세한 출처는 README",
              F_TINY, DIM, (W // 2, H - 22), center=True)
         pg.display.flip()
@@ -323,16 +359,18 @@ def menu():
             if quit_check(ev):
                 raise SystemExit
             if ev.type == pg.KEYDOWN and ev.key == pg.K_TAB:
-                current[0] = (current[0] + 1) % len(MODES)
-            if ev.type == pg.KEYDOWN and ev.key == pg.K_1:
-                items[ev.key - pg.K_1][2]()
+                sel["tab"] = (t + 1) % len(TABS)
+            if ev.type == pg.KEYDOWN and ev.key in (pg.K_1, pg.K_RETURN, pg.K_KP_ENTER):
+                play_paddle()
             if ev.type == pg.MOUSEBUTTONDOWN:
-                for k, r in enumerate(brain_rects):
+                for k, r in enumerate(tab_rects):
                     if r.collidepoint(ev.pos):
-                        current[0] = k
-                for r, fn in rects:
+                        sel["tab"] = k
+                for r, slot, key in picks:
                     if r.collidepoint(ev.pos):
-                        fn()
+                        sel[slot] = key
+                if go.collidepoint(ev.pos):
+                    play_paddle()
         clock.tick(FPS)
 
 

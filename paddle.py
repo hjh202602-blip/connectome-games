@@ -11,7 +11,9 @@ import numpy as np
 PH = 0.18              # paddle width
 X_BLUE, X_ORANGE = 0.03, 0.97
 SERVE_V = 0.01         # ball speed before spin
-BRAIN_SPD = 0.018      # how far an AI/brain paddle may move per frame
+BRAIN_SPD = 0.018      # how far an insect-brain paddle may move per frame
+HUMAN_ACC = 0.0025     # human and my-AI paddles: push per frame (inertia) ...
+FRICTION = 0.88        # ... and friction; top speed 0.0025*0.88/0.12 = 0.018 per frame
 PUSH = 0.4             # paddle speed added to the ball's sideways speed on a hit
 CURVE = 0.012          # how hard spin bends the ball (Magnus effect)
 SPIN_DECAY = 0.993     # spin lost per frame
@@ -66,6 +68,16 @@ def move(pos, out):
     """Move an AI/brain paddle by its output (-1..1). Returns (new pos, distance moved)."""
     new = np.clip(pos + BRAIN_SPD * np.clip(out, -1, 1), PH / 2, 1 - PH / 2)
     return new, new - pos
+
+
+def move_inertia(pos, vel, out):
+    """Move a paddle the way the human one moves: out (-1..1) pushes it, friction slows it,
+    it stops dead at the walls. Returns (new pos, new velocity, distance moved)."""
+    vel = (vel + HUMAN_ACC * np.clip(out, -1, 1)) * FRICTION
+    new = pos + vel
+    vel = np.where((new > PH / 2) & (new < 1 - PH / 2), vel, 0.0)
+    new = np.clip(new, PH / 2, 1 - PH / 2)
+    return new, vel, new - pos
 
 
 def view(ball, side):

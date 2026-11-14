@@ -4,6 +4,9 @@
     python train_ai.py v2 150       # number of generations
     python train_ai.py v1 300 --new # v1 from a random network
 
+My AI moves its paddle exactly like the human (same push, friction and top speed).
+It is rewarded for points, and a little for returns, for spin and for aiming the ball
+(curve included) far from where the opponent's paddle is.
 Every generation, slightly different copies of the network each play 8 rallies of
 20 seconds, all at once. Copies that score more pull the network their way.
 
@@ -36,6 +39,9 @@ REACT = 8                      # the predictor rethinks every 8 frames
 FLY_EVERY = 2                  # the fly brain rethinks every 2nd frame (speed)
 RETURN_BONUS = 0.02            # small reward for each return, so a fresh net learns to hit
 SPIN_BONUS = 0.04              # small reward for putting spin on a return (x spin fraction)
+FAR_BONUS = 0.06               # reward for aiming far from the opponent's paddle: where the
+                               # returned ball will land (curve included) vs where they stand
+FAR_FULL = 0.4                 # this far away (40% of the court) earns the whole bonus
 
 
 def brain_out(brain, ball, op):
@@ -58,21 +64,24 @@ def play(thetas, opp_theta, games, rng, brains):
     op = np.full(shape, 0.5)       # its opponent (blue side)
     me_prev = np.zeros(shape)
     op_prev = np.zeros(shape)
+    me_vel = np.zeros(shape)       # my AI moves with the human's inertia
+    op_vel = np.zeros(shape)       # so does its copy when it plays itself
     target = np.full(shape, 0.5)
     o = np.zeros(shape)
     score = np.zeros(shape)
     points = np.zeros(shape)
     hits = np.zeros(shape)
     spin_sum = np.zeros(shape)
+    far_sum = np.zeros(shape)
     has = set(games)
     for t in range(FRAMES):
-        x = ai.features(ball, 1, me, op, me_prev)
+        x = ai.features(ball, 1, me, op, me_prev, me_vel)
         out, _, _ = ai.forward(thetas, x)
         # opponents
         new_o = o.copy()
         if SELF in has:
             m = kind == SELF
-            xo = ai.features(ball[m], -1, op[m], me[m], op_prev[m])[None]
+            xo = ai.features(ball[m], -1, op[m], me[m], op_prev[m], op_vel[m])[None]
             new_o[m] = ai.forward(opp_theta[None], xo)[0][0]
         if PRED in has:
             m = kind == PRED
@@ -92,12 +101,23 @@ def play(thetas, opp_theta, games, rng, brains):
             m = kind == FLY
             new_o[m] = brain_out(brains["fly"], ball[m], op[m])
         o = new_o
-        me, dme = pd.move(me, out)
-        op, dop = pd.move(op, o)
+        me, me_vel, dme = pd.move_inertia(me, me_vel, out)
+        op_d, dop = pd.move(op, o)
+        if SELF in has:
+            op_i, op_vel, dop_i = pd.move_inertia(op, op_vel, o)
+            self_ = kind == SELF
+            op_d, dop = np.where(self_, op_i, op_d), np.where(self_, dop_i, dop)
+        op = op_d
         me_prev, op_prev = out, o
         ball, scored, hit = pd.step(ball, op, me, dop, dme)
         spun = np.where(hit > 0, np.abs(ball[..., 4]) / pd.SPIN_MAX, 0)
-        score += scored + RETURN_BONUS * (hit > 0) + SPIN_BONUS * spun
+        far = np.zeros(shape)
+        h = hit > 0
+        if h.any():
+            land = pd.predict_landing(ball[h], -1, 200)  # follows the spin's curve exactly
+            far[h] = np.minimum(np.abs(land - op[h]) / FAR_FULL, 1)
+        score += scored + RETURN_BONUS * h + SPIN_BONUS * spun + FAR_BONUS * far
+        far_sum += far
         points += scored
         hits += hit > 0
         spin_sum += spun
@@ -107,7 +127,7 @@ def play(thetas, opp_theta, games, rng, brains):
             new[..., 2] = np.where(scored > 0, -1, 1) * pd.SERVE_V * np.cos(srv[t])
             new[..., 3] = pd.SERVE_V * np.sin(srv[t])
             ball = np.where((scored != 0)[..., None], new, ball)
-    return score, points, hits, spin_sum, kind
+    return score, points, hits, spin_sum, far_sum, kind
 
 
 def main():
@@ -122,13 +142,12 @@ def main():
     rng = np.random.default_rng()
     path = ai.path(ver)
     if "--new" not in sys.argv and ai.load(ver) is not None:
-        d = np.load(path, allow_pickle=True)
-        theta, meta = d["theta"].astype(float), d["meta"].item()
-        print(f"저장된 내 AI {ver}({meta['gens']}세대)에서 이어서 학습합니다.")
+        theta, meta = ai.load_theta(path)
+        print(f"저장된 학습 AI {ver}({meta['gens']}세대)에서 이어서 학습합니다.")
     elif cfg["start"] and ai.load(cfg["start"]) is not None:
-        d = np.load(ai.path(cfg["start"]), allow_pickle=True)
-        theta, meta = d["theta"].astype(float), dict(d["meta"].item())
-        print(f"내 AI {cfg['start']}({meta['gens']}세대)에서 출발해 {ver}를 만듭니다.")
+        theta, meta = ai.load_theta(ai.path(cfg["start"]))
+        meta = dict(meta)
+        print(f"학습 AI {cfg['start']}({meta['gens']}세대)에서 출발해 {ver}를 만듭니다.")
     else:
         theta, meta = ai.init(rng), {"gens": 0, "games": 0}
         print(f"새 신경망으로 {ver}를 시작합니다.")
@@ -147,7 +166,7 @@ def main():
     for gen in range(1, gens + 1):
         eps = rng.normal(0, 1, (half, ai.N_PARAMS))
         eps = np.concatenate([eps, -eps])
-        score, points, hits, spin, kind = play(theta + SIGMA * eps, theta, games, rng, brains)
+        score, points, hits, spin, far, kind = play(theta + SIGMA * eps, theta, games, rng, brains)
         fit = score.mean(1)
         # rank-based weights, robust to noisy scores
         ranks = np.empty(pop)
@@ -163,8 +182,9 @@ def main():
             per = " ".join(f"{NAMES[k]} {points[:, kind[0] == k].mean():+.2f}"
                            for k in dict.fromkeys(games) if k != SELF)
             sp = spin.sum() / max(hits.sum(), 1)
+            fa = far.sum() / max(hits.sum(), 1)
             print(f"{meta['gens']:4d}세대 | 20초당 득실: {per} | 받아친 공 {hits.mean():.1f}개 | "
-                  f"친 공의 평균 회전 {sp:.0%} | {time.time() - t0:.0f}초", flush=True)
+                  f"회전 {sp:.0%} | 상대에게서 먼 쪽 {fa:.0%} | {time.time() - t0:.0f}초", flush=True)
         if gen % 10 == 0 or gen == gens:
             np.savez(path, theta=theta, meta=np.array(meta, dtype=object))
     print("저장했습니다:", path)

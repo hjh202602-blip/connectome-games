@@ -133,23 +133,28 @@
   });
 
   // ------------------------------------------------------------ modes & menu
-  // [label, description, [blue, orange]]; null = human
-  const MODES = [
-    ["사람 vs 꼬마선충", "C. elegans 뉴런 302개 전부를 쓴 뇌 (Cook 2019)", [null, "worm"]],
-    ["사람 vs 초파리", "FlyWire 초파리 뇌에서 잘라낸 뉴런 2,000개 회로 (2024)", [null, "fly"]],
-    ["사람 vs 내 AI v1", "혼자 연습해서 회전 공을 읽고, 회전을 걸어 치는 신경망", [null, "v1"]],
-    ["사람 vs 내 AI v2", "v1이 꼬마선충·초파리 뇌와 겨루며 더 배운 신경망", [null, "v2"]],
-    ["꼬마선충 vs 초파리", "두 뇌끼리 대결을 구경합니다. 배속 조절과 그만 보기가 있어요", ["worm", "fly"]],
-    ["내 AI v2 vs 초파리", "내 AI v2(파랑)와 초파리 뇌(주황)의 대결을 구경합니다", ["v2", "fly"]],
-    ["내 AI v1 vs v2", "내 AI 두 버전(파랑 v1, 주황 v2)의 대결을 구경합니다", ["v1", "v2"]],
-  ].filter(m => m[2].every(k => !/^v\d$/.test(k || "") || (window.AI_DATA || {})[k])); // hide untrained AIs
-  let mode = 0;
+  // who can play: insect brains and every trained version of the trained AI
+  const PLAYERS = {
+    worm: ["꼬마선충", "C. elegans 뉴런 302개 전부를 쓴 뇌 (Cook 2019)"],
+    fly: ["초파리", "FlyWire 초파리 뇌에서 잘라낸 뉴런 2,000개 회로 (2024)"],
+    v1: ["학습 AI v1", "혼자 연습해 회전 공을 읽고, 상대에게서 먼 쪽으로 휘어 치는 신경망"],
+    v2: ["학습 AI v2", "v1이 꼬마선충·초파리 뇌와 겨루며 더 배운 신경망"],
+  };
+  const isAI = k => /^v\d+$/.test(k || "");
+  const VERS = Object.keys(PLAYERS).filter(k => isAI(k) && (window.AI_DATA || {})[k]); // hide untrained AIs
+  const TABS = [
+    ["사람 vs 곤충 뇌", ["worm", "fly"]],
+    ["사람 vs 학습 AI", VERS],
+    ["대결", ["worm", "fly", ...VERS]],
+  ].filter(t => t[1].length);
+  const sel = { tab: 0, 0: "worm", 1: VERS[0], 2: null, blue: "worm", orange: VERS[0] || "fly" };
+  const pair = () => (TABS[sel.tab][0] === "대결" ? [sel.blue, sel.orange] : [null, sel[sel.tab]]);
   function players(game) {
-    return MODES[mode][2].map(k => (k === null ? null : /^v\d$/.test(k) ? makeAI(k) : BR[k][game]));
+    return pair().map(k => (k === null ? null : isAI(k) ? makeAI(k) : BR[k][game]));
   }
 
-  // ------------------------------------------------------------ my AI (ordinary neural net, see ai.py)
-  // 9 inputs -> 32 tanh -> 32 tanh -> 1 tanh. Weights come from web/ai.js (python export_web.py).
+  // ------------------------------------------------------------ trained AI (ordinary neural net, see ai.py)
+  // 10 inputs -> 32 tanh -> 32 tanh -> 1 tanh. Weights come from web/ai.js (python export_web.py).
   function makeAI(ver) {
     const d = window.AI_DATA[ver], H = d.hidden, th = d.theta, n = d.nIn;
     let k = 0;
@@ -157,11 +162,11 @@
     const W1 = take(n * H), b1 = take(H), W2 = take(H * H), b2 = take(H), W3 = take(H), b3 = take(1)[0];
     const lastState = new Float64Array(2 * H);
     return {
-      wiring: { label: `내 AI ${ver}`, N: 2 * H, order: [...Array(2 * H).keys()],
+      wiring: { label: `학습 AI ${ver}`, N: 2 * H, order: [...Array(2 * H).keys()],
                 info: [`일반 신경망 ${n} → ${H} → ${H} → 1 (커넥톰 아님)`,
                        `${ver === "v1" ? "스스로 연습" : "v1에서 곤충 뇌와 겨루며 연습"} · 모두 ${d.gens}세대, 경기 ${d.games.toLocaleString()}판`,
-                       "회전·상대 위치·내 지난 움직임까지 봄"] },
-      lastState, prev: 0,
+                       "사람과 같은 관성으로 움직임 · 회전·상대 위치까지 봄"] },
+      lastState, prev: 0, vel: 0,
       act(x) {
         const h1 = new Float64Array(H), h2 = new Float64Array(H);
         for (let j = 0; j < H; j++) { let s = b1[j]; for (let i = 0; i < n; i++) s += x[i] * W1[i * H + j]; h1[j] = Math.tanh(s); }
@@ -189,18 +194,30 @@
   ];
 
   function renderMenu() {
-    $("modes").innerHTML = MODES.map(([n, d], k) =>
-      `<button class="card mode" data-mode="${k}" aria-pressed="${k === mode}">
-         <span class="name">${n}</span><span class="desc">${d}</span></button>`).join("");
+    const t = sel.tab, versus = TABS[t][0] === "대결";
+    $("tabs").innerHTML = TABS.map(([n], k) =>
+      `<button class="tab" role="tab" data-tab="${k}" aria-selected="${k === t}">${n}</button>`).join("");
+    const row = (slot, chosen, side) => `<div class="pick-row">${side || ""}${TABS[t][1].map(k =>
+      `<button class="pick" data-slot="${slot}" data-key="${k}" aria-pressed="${k === chosen}">${PLAYERS[k][0]}</button>`).join("")}</div>`;
+    $("picks").innerHTML = versus
+      ? row("blue", sel.blue, '<span class="side b">파랑 (아래)</span>') + row("orange", sel.orange, '<span class="side o">주황 (위)</span>')
+      : row(t, sel[t]);
+    $("pick-desc").textContent = versus
+      ? `${PLAYERS[sel.blue][0]}(파랑) vs ${PLAYERS[sel.orange][0]}(주황) · 대결을 구경합니다. 배속 조절과 그만 보기가 있어요`
+      : PLAYERS[sel[t]][1];
     $("games").innerHTML = GAMES.map((g, k) =>
       `<button class="card game" data-game="${k}">${g.art}
          <div class="body"><span class="name">${g.name} <span class="kbd">${g.key}</span></span>
-         <span class="desc">${g.desc}</span><span class="desc">조작: ${g.input}</span>
-         <span class="play">플레이 →</span></div></button>`).join("");
+         <span class="desc">${g.desc}</span><span class="desc">조작: ${versus ? "구경만 해요" : g.input}</span>
+         <span class="play">${versus ? "구경하기" : "플레이"} →</span></div></button>`).join("");
   }
-  $("modes").addEventListener("click", e => {
-    const b = e.target.closest("[data-mode]");
-    if (b) { mode = +b.dataset.mode; renderMenu(); }
+  $("tabs").addEventListener("click", e => {
+    const b = e.target.closest("[data-tab]");
+    if (b) { sel.tab = +b.dataset.tab; renderMenu(); }
+  });
+  $("picks").addEventListener("click", e => {
+    const b = e.target.closest("[data-slot]");
+    if (b) { sel[b.dataset.slot] = b.dataset.key; renderMenu(); }
   });
   $("games").addEventListener("click", e => {
     const b = e.target.closest("[data-game]");
@@ -237,18 +254,28 @@
   }
   function decide(p, ball, side, me, opp) {
     const [bx, by, vx, vy, spin] = view(ball, side);
-    if (p.act) return p.act([bx * 2 - 1, by * 2 - 1, vx * 40, vy * 40, spin / SPIN_MAX, me * 2 - 1, (by - me) * 2, opp * 2 - 1, p.prev]);
+    if (p.act) return p.act([bx * 2 - 1, by * 2 - 1, vx * 40, vy * 40, spin / SPIN_MAX, me * 2 - 1, (by - me) * 2, opp * 2 - 1, p.prev, p.vel * 50]);
     return p.predict(pongFeatures(bx, by, vx, vy, me))[0];
   }
-  const movePaddle = (pos, out) => clip(pos + BRAIN_SPD * clip(out, -1, 1), PH / 2, 1 - PH / 2);
+  // Human paddle and my AI have inertia: a push accelerates them, friction slows them down,
+  // they stop dead at the wall. The insect brains move their paddle directly.
+  const HUMAN_ACC = 0.0025, FRICTION = 0.88;
+  function inertia(o, pos, push) { // o.vel is updated; returns the new position
+    o.vel = (o.vel + HUMAN_ACC * clip(push, -1, 1)) * FRICTION;
+    const p = pos + o.vel;
+    if (!(p > PH / 2 && p < 1 - PH / 2)) o.vel = 0;
+    return clip(p, PH / 2, 1 - PH / 2);
+  }
+  function movePaddle(p, ball, side, me, opp) {
+    const out = decide(p, ball, side, me, opp);
+    return p.act ? inertia(p, me, out) : clip(me + BRAIN_SPD * clip(out, -1, 1), PH / 2, 1 - PH / 2);
+  }
 
   function PaddleBall() {
     const [left, right] = players("pong"); // left (bottom) null = human
     const auto = !!left;
     const GOAL = 7;
-    // Human paddle has inertia: keys accelerate it, friction slows it down.
-    const HUMAN_ACC = 0.0025, FRICTION = 0.88;
-    const st = { score: [0, 0], hy: 0.5, hv: 0, by: 0.5, serveDir: 1, ball: null, winner: null, angle: 0, trail: [], wait: 0 };
+    const st = { score: [0, 0], hy: 0.5, vel: 0, by: 0.5, serveDir: 1, ball: null, winner: null, angle: 0, trail: [], wait: 0 };
     setupPanel("패들볼", [left, right], auto ? [] : [
       "아래 파란 판: A/D 또는 ←/→ (관성이 있어요)", "SPACE로 서브",
       "움직이면서 치면 회전이 걸려 휘어요", "회전 방향으로 치면 더 세게, 반대면 약해지거나 뒤집혀요",
@@ -263,18 +290,15 @@
       const oldH = st.hy, oldB = st.by, ball = st.ball;
       if (!left) {
         const push = (held.has("d") || held.has("arrowright")) - (held.has("a") || held.has("arrowleft"));
-        st.hv = (st.hv + HUMAN_ACC * push) * FRICTION;
-        st.hy += st.hv;
-        if (!(st.hy > PH / 2 && st.hy < 1 - PH / 2)) st.hv = 0; // stops dead at the wall
-        st.hy = clip(st.hy, PH / 2, 1 - PH / 2);
-      } else if (ball) st.hy = movePaddle(st.hy, decide(left, ball, -1, st.hy, st.by));
+        st.hy = inertia(st, st.hy, push);
+      } else if (ball) st.hy = movePaddle(left, ball, -1, st.hy, st.by);
       if (auto && !ball) {
         st.wait++;
         if (st.winner && st.wait > 180) { st.score = [0, 0]; st.winner = null; st.wait = 0; }
         else if (!st.winner && st.wait > 50) { st.ball = serve(st.serveDir); st.trail = []; st.wait = 0; }
       }
       if (!ball) return;
-      st.by = movePaddle(st.by, decide(right, ball, 1, st.by, st.hy));
+      st.by = movePaddle(right, ball, 1, st.by, st.hy);
       let [bx, by, vx, vy, spin] = ball;
       const vel = { "-1": st.hy - oldH, "1": st.by - oldB };
       vy = clip(vy - spin * CURVE, -VY_MAX, VY_MAX);

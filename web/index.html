@@ -53,10 +53,21 @@
     padding: 18px 20px; transition: transform .15s, border-color .15s, background .15s, box-shadow .15s;
   }
   .card:hover { transform: translateY(-2px); border-color: var(--line-2); box-shadow: 0 10px 30px rgba(0, 0, 0, .35); }
-  .mode { display: flex; flex-direction: column; gap: 6px; }
-  .mode .name { font-weight: 700; font-size: 17px; }
-  .mode .desc { color: var(--dim); font-size: 13.5px; }
-  .mode[aria-pressed="true"] { border-color: var(--orange); background: linear-gradient(180deg, #2a2016, var(--surface)); }
+  .tabs { display: flex; gap: 8px; border-bottom: 1px solid var(--line); margin-bottom: 18px; flex-wrap: wrap; }
+  .tab { background: none; border: 0; border-bottom: 3px solid transparent; padding: 10px 16px; font-weight: 700;
+         font-size: 16px; color: var(--dim); margin-bottom: -1px; }
+  .tab:hover { color: var(--fg); }
+  .tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--orange); }
+  .picks { display: flex; flex-direction: column; gap: 12px; }
+  .pick-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .pick-row .side { width: 84px; color: var(--dim); font-size: 13.5px; font-weight: 700; }
+  .pick-row .side.b { color: var(--blue); } .pick-row .side.o { color: var(--orange); }
+  .pick { padding: 10px 18px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface);
+          font-weight: 700; transition: border-color .15s, background .15s; }
+  .pick:hover { border-color: var(--line-2); }
+  .pick[aria-pressed="true"] { border-color: var(--orange); background: linear-gradient(180deg, #2a2016, var(--surface)); }
+  .pick-desc { color: var(--dim); font-size: 14px; margin: 14px 0 34px; min-height: 1.5em; }
+  @media (max-width: 600px) { .pick-row .side { width: 100%; } .pick { flex: 1 1 40%; } }
   .game { display: flex; flex-direction: column; gap: 10px; padding: 0; overflow: hidden; }
   .grid.one { grid-template-columns: 1fr; }
   .grid.one .game { flex-direction: row; align-items: stretch; gap: 0; }
@@ -147,7 +158,9 @@
     </div>
 
     <p class="section-title">상대 고르기</p>
-    <div class="grid" id="modes"></div>
+    <div class="tabs" id="tabs" role="tablist"></div>
+    <div class="picks" id="picks"></div>
+    <p class="pick-desc" id="pick-desc"></p>
 
     <p class="section-title">게임</p>
     <div class="grid one" id="games"></div>
