@@ -139,6 +139,7 @@
     fly: ["초파리", "FlyWire 초파리 뇌에서 잘라낸 뉴런 2,000개 회로 (2024)"],
     v1: ["학습 AI v1", "혼자 연습해 회전 공을 읽고, 상대에게서 먼 쪽으로 휘어 치는 신경망"],
     v2: ["학습 AI v2", "v1이 꼬마선충·초파리 뇌와 겨루며 더 배운 신경망"],
+    v3: ["학습 AI v3", "v2가 곤충 뇌, 그리고 v2 자신을 이기도록 더 크게 학습한 신경망"],
   };
   const isAI = k => /^v\d+$/.test(k || "");
   const VERS = Object.keys(PLAYERS).filter(k => isAI(k) && (window.AI_DATA || {})[k]); // hide untrained AIs
@@ -164,7 +165,7 @@
     return {
       wiring: { label: `학습 AI ${ver}`, N: 2 * H, order: [...Array(2 * H).keys()],
                 info: [`일반 신경망 ${n} → ${H} → ${H} → 1 (커넥톰 아님)`,
-                       `${ver === "v1" ? "스스로 연습" : "v1에서 곤충 뇌와 겨루며 연습"} · 모두 ${d.gens}세대, 경기 ${d.games.toLocaleString()}판`,
+                       `${({ v1: "스스로 연습", v2: "v1에서 곤충 뇌와 겨루며 연습" })[ver] || "v2에서 곤충 뇌·v2와 겨루며 연습"} · 모두 ${d.gens}세대, 경기 ${d.games.toLocaleString()}판`,
                        "사람과 같은 관성으로 움직임 · 회전·상대 위치까지 봄"] },
       lastState, prev: 0, vel: 0,
       act(x) {

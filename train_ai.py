@@ -1,4 +1,4 @@
-"""Train 'my AI' for paddle ball by practising on its own (evolution strategies).
+"""Train the 'trained AI' for paddle ball by practising on its own (evolution strategies).
 
     python train_ai.py v2           # 60 generations of v2 (continues where it left off)
     python train_ai.py v2 150       # number of generations
@@ -16,22 +16,30 @@ Every generation, slightly different copies of the network each play 8 rallies o
   v2: starts from v1 and keeps learning against the real connectome brains:
       32 copies. Opponents: 2x worm brain, 2x fly brain, 2x predictor, 2x itself.
       The fly brain is slow (2,000 neurons), so in training it rethinks every 2nd frame.
+  v3: starts from v2. 64 copies x 10 rallies, split over 4 processes:
+      2x worm, 2x fly, 2x predictor, 2x the frozen v2 (so it must beat its parent), 2x itself.
 
 The AI is saved every 10 generations to models/ai_paddle[_v2].npz and web/ai.js is
 rewritten at the end; the game picks it up the next time you choose an AI mode.
 """
+import os
 import sys
 import time
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")  # one core per worker process
+import multiprocessing as mp
 import numpy as np
 import ai
 import paddle as pd
 from games import pong_features
 
-PRED, LINE, SELF, WORM, FLY = range(5)
-NAMES = {PRED: "예측", LINE: "직선", SELF: "자기", WORM: "꼬마선충", FLY: "초파리"}
+PRED, LINE, SELF, WORM, FLY, V2 = range(6)
+NAMES = {PRED: "예측", LINE: "직선", SELF: "자기", WORM: "꼬마선충", FLY: "초파리", V2: "v2"}
+AI_KINDS = (SELF, V2)          # opponents that are a trained AI (they move with inertia too)
 CONFIG = {
     "v1": dict(pop=64, games=[PRED] * 4 + [LINE] * 2 + [SELF] * 2, start=None, gens=150),
     "v2": dict(pop=32, games=[WORM] * 2 + [FLY] * 2 + [PRED] * 2 + [SELF] * 2, start="v1", gens=60),
+    "v3": dict(pop=64, games=[WORM] * 2 + [FLY] * 2 + [PRED] * 2 + [V2] * 2 + [SELF] * 2, start="v2",
+               gens=80, workers=4),
 }
 FRAMES = 1200
 SIGMA, LR = 0.04, 0.03
@@ -51,8 +59,11 @@ def brain_out(brain, ball, op):
     return np.clip(brain.predict(X)[:, 0], -1, 1)
 
 
-def play(thetas, opp_theta, games, rng, brains):
-    """thetas (P, N) all play len(games) rallies. Returns per-candidate scores and stats."""
+def play(thetas, opp, games, seed, brains, fly_every=FLY_EVERY):
+    """thetas (P, N) all play len(games) rallies. opp maps AI opponent kinds to weights.
+    The same seed gives the same serves, so every candidate (in every process) is compared fairly.
+    Returns per-candidate scores and stats."""
+    rng = np.random.default_rng(seed)
     P, G = len(thetas), len(games)
     shape = (P, G)
     kind = np.broadcast_to(np.array(games), shape)
@@ -79,14 +90,15 @@ def play(thetas, opp_theta, games, rng, brains):
         out, _, _ = ai.forward(thetas, x)
         # opponents
         new_o = o.copy()
-        if SELF in has:
-            m = kind == SELF
-            xo = ai.features(ball[m], -1, op[m], me[m], op_prev[m], op_vel[m])[None]
-            new_o[m] = ai.forward(opp_theta[None], xo)[0][0]
+        for k in AI_KINDS:
+            if k in has:
+                m = kind == k
+                xo = ai.features(ball[m], -1, op[m], me[m], op_prev[m], op_vel[m])[None]
+                new_o[m] = ai.forward(opp[k][None], xo)[0][0]
         if PRED in has:
             m = kind == PRED
-            if t % REACT == 0:
-                target = np.where(ball[..., 2] < 0, pd.predict_landing(ball, -1, 130), 0.5)
+            if t % REACT == 0:  # only the rallies that face the predictor
+                target[m] = np.where(ball[m][..., 2] < 0, pd.predict_landing(ball[m], -1, 130), 0.5)
             new_o[m] = np.clip((target[m] - op[m]) * 8, -1, 1)
         if LINE in has:
             m = kind == LINE
@@ -97,15 +109,15 @@ def play(thetas, opp_theta, games, rng, brains):
         if WORM in has:
             m = kind == WORM
             new_o[m] = brain_out(brains["worm"], ball[m], op[m])
-        if FLY in has and t % FLY_EVERY == 0:
+        if FLY in has and t % fly_every == 0:
             m = kind == FLY
             new_o[m] = brain_out(brains["fly"], ball[m], op[m])
         o = new_o
         me, me_vel, dme = pd.move_inertia(me, me_vel, out)
         op_d, dop = pd.move(op, o)
-        if SELF in has:
+        if has & set(AI_KINDS):
             op_i, op_vel, dop_i = pd.move_inertia(op, op_vel, o)
-            self_ = kind == SELF
+            self_ = np.isin(kind, AI_KINDS)
             op_d, dop = np.where(self_, op_i, op_d), np.where(self_, dop_i, dop)
         op = op_d
         me_prev, op_prev = out, o
@@ -130,6 +142,19 @@ def play(thetas, opp_theta, games, rng, brains):
     return score, points, hits, spin_sum, far_sum, kind
 
 
+_BRAINS = {}
+
+
+def _init_worker():
+    from train import load_or_train
+    _BRAINS.update(worm=load_or_train("worm", "pong"), fly=load_or_train("fly", "pong"))
+
+
+def _work(args):
+    thetas, opp, games, seed, fly_every = args
+    return play(thetas, opp, games, seed, _BRAINS, fly_every)
+
+
 def main():
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -152,13 +177,19 @@ def main():
         theta, meta = ai.init(rng), {"gens": 0, "games": 0}
         print(f"새 신경망으로 {ver}를 시작합니다.")
     meta["version"] = ver
-    brains = {}
+    workers, fly_every = cfg.get("workers", 1), cfg.get("fly_every", FLY_EVERY)
+    pool = None
     if WORM in games or FLY in games:
-        from train import load_or_train
         print("곤충 뇌를 불러옵니다...")
-        brains = {"worm": load_or_train("worm", "pong"), "fly": load_or_train("fly", "pong")}
+        if workers > 1:
+            pool = mp.Pool(workers, initializer=_init_worker)
+        else:
+            _init_worker()
+    opp = {}
+    if V2 in games:
+        opp[V2] = ai.load_theta(ai.path("v2"))[0]
     print("상대: " + ", ".join(f"{NAMES[k]} {games.count(k)}판" for k in dict.fromkeys(games))
-          + f" / 복사본 {pop}개", flush=True)
+          + f" / 복사본 {pop}개" + (f" / 프로세스 {workers}개" if pool else ""), flush=True)
     m = np.zeros_like(theta)
     v = np.zeros_like(theta)
     half = pop // 2
@@ -166,7 +197,15 @@ def main():
     for gen in range(1, gens + 1):
         eps = rng.normal(0, 1, (half, ai.N_PARAMS))
         eps = np.concatenate([eps, -eps])
-        score, points, hits, spin, far, kind = play(theta + SIGMA * eps, theta, games, rng, brains)
+        opp[SELF] = theta
+        seed = int(rng.integers(2 ** 31))
+        cands = theta + SIGMA * eps
+        if pool:
+            parts = pool.map(_work, [(c, opp, games, seed, fly_every) for c in np.array_split(cands, workers)])
+            score, points, hits, spin, far = (np.concatenate([p[i] for p in parts]) for i in range(5))
+            kind = parts[0][5]
+        else:
+            score, points, hits, spin, far, kind = play(cands, opp, games, seed, _BRAINS, fly_every)
         fit = score.mean(1)
         # rank-based weights, robust to noisy scores
         ranks = np.empty(pop)

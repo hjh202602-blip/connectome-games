@@ -32,7 +32,8 @@ F_MODE = font(18, True)
 PLAYERS = {"worm": ("꼬마선충", "C. elegans 뉴런 302개 전부 (Cook 2019)"),
            "fly": ("초파리", "FlyWire 초파리 뇌에서 잘라낸 뉴런 2,000개 회로 (2024)"),
            "v1": ("학습 AI v1", "혼자 연습해 회전 공을 읽고, 상대에게서 먼 쪽으로 휘어 치는 신경망"),
-           "v2": ("학습 AI v2", "v1이 꼬마선충·초파리 뇌와 겨루며 더 배운 신경망")}
+           "v2": ("학습 AI v2", "v1이 꼬마선충·초파리 뇌와 겨루며 더 배운 신경망"),
+           "v3": ("학습 AI v3", "v2가 곤충 뇌, 그리고 v2 자신을 이기도록 더 크게 학습한 신경망")}
 # menu tabs: (label, what the choice buttons pick)
 TABS = [("사람 vs 곤충 뇌", ["worm", "fly"]),
         ("사람 vs 학습 AI", list(ai.VERSIONS)),
@@ -312,8 +313,9 @@ def button(r, label, on, f=F_MODE):
 
 def choice_row(y, keys, chosen, label=None):
     """A row of player buttons centred at height y. Returns [(rect, key)]."""
-    w, gap = 200, 14
-    x0 = W // 2 - (len(keys) * (w + gap) - gap) // 2 + (50 if label else 0)
+    gap, room = 14, W - 60 - (140 if label else 0)  # leave space for the side label
+    w = min(200, (room - gap * (len(keys) - 1)) // len(keys))
+    x0 = W // 2 - (len(keys) * (w + gap) - gap) // 2 + (70 if label else 0)
     if label:
         text(label, F_SMALL, DIM, (x0 - 16 - F_SMALL.size(label)[0], y + 15))
     out = []

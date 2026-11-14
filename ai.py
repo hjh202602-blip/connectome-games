@@ -70,7 +70,7 @@ class _Info:
 
     def __init__(self, ver, meta):
         self.label = f"학습 AI {ver}"
-        how = "스스로 연습" if ver == "v1" else "v1에서 곤충 뇌와 겨루며 연습"
+        how = {"v1": "스스로 연습", "v2": "v1에서 곤충 뇌와 겨루며 연습"}.get(ver, "v2에서 곤충 뇌·v2와 겨루며 연습")
         self.info = ["일반 신경망 10 → 32 → 32 → 1 (커넥톰 아님)",
                      f"{how} · 모두 {meta.get('gens', 0)}세대, 경기 {meta.get('games', 0):,}판",
                      "사람과 같은 관성으로 움직임 · 회전·상대 위치까지 봄"]
@@ -118,7 +118,7 @@ def export_js():
     return os.path.abspath(out)
 
 
-VERSIONS = ("v1", "v2")
+VERSIONS = ("v1", "v2", "v3")
 
 
 def load(ver="v1"):

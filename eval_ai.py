@@ -1,15 +1,18 @@
-"""Test my AI versions against the insect brains, the predictor and each other.
+"""Test the trained AI versions against the insect brains, the predictor and each other.
 
-    python eval_ai.py          # 32 rallies of 60 seconds per pairing
+    python eval_ai.py          # 128 rallies of 60 seconds per pairing, several matches at once
 """
+import os
 import sys
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+import multiprocessing as mp
 import numpy as np
 import ai
 import paddle as pd
 from games import pong_features
 from train import load_or_train
 
-N, FRAMES = 32, 3600
+N, FRAMES = 128, 3600
 
 
 def brain_out(b, ball, side, me):
@@ -55,14 +58,19 @@ def match(ver, opp_name, rng):
     return won, lost, hits, np.mean(spin) if spin else 0
 
 
+def _run(pair):
+    w, l, h, s = match(*pair, np.random.default_rng(7))  # same serves for every pairing
+    return pair, w, l, h, s
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
-    label = {"worm": "꼬마선충", "fly": "초파리", "pred": "예측 상대", "v1": "학습 AI v1"}
+    label = {"worm": "꼬마선충", "fly": "초파리", "pred": "예측 상대",
+             **{v: f"학습 AI {v}" for v in ai.VERSIONS}}
     vers = [v for v in ai.VERSIONS if ai.load(v) is not None]
-    for ver in vers:
-        opps = ["worm", "fly", "pred"] + (["v1"] if ver != "v1" else [])
-        for o in opps:
-            w, l, h, s = match(ver, o, np.random.default_rng(0))  # same serves for every pairing
+    pairs = [(ver, o) for ver in vers for o in ["worm", "fly", "pred"] + [v for v in vers if v < ver]]
+    with mp.Pool(min(len(pairs), max(1, (os.cpu_count() or 2) - 2))) as pool:  # one match per process
+        for (ver, o), w, l, h, s in pool.imap(_run, pairs):
             print(f"학습 AI {ver} vs {label[o]}: {N}판 x 60초 동안 {w}점 얻고 {l}점 잃음 "
                   f"(득점 비율 {w / max(w + l, 1):.0%}), 받아친 공 {h}개, 친 공의 평균 회전 {s:.0%}", flush=True)
