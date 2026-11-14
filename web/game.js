@@ -133,15 +133,42 @@
   });
 
   // ------------------------------------------------------------ modes & menu
+  // [label, description, [blue, orange]]; null = human
   const MODES = [
-    ["사람 vs 꼬마선충", "C. elegans 뉴런 302개 전부를 쓴 뇌 (Cook 2019)"],
-    ["사람 vs 초파리", "FlyWire 초파리 뇌에서 잘라낸 뉴런 2,000개 회로 (2024)"],
-    ["꼬마선충 vs 초파리", "두 뇌끼리 대결을 구경합니다. 배속 조절과 그만 보기가 있어요"],
+    ["사람 vs 꼬마선충", "C. elegans 뉴런 302개 전부를 쓴 뇌 (Cook 2019)", [null, "worm"]],
+    ["사람 vs 초파리", "FlyWire 초파리 뇌에서 잘라낸 뉴런 2,000개 회로 (2024)", [null, "fly"]],
+    ["사람 vs 내 AI", "스스로 연습해서 회전 공을 읽고, 회전을 걸어 치는 신경망", [null, "ai"]],
+    ["꼬마선충 vs 초파리", "두 뇌끼리 대결을 구경합니다. 배속 조절과 그만 보기가 있어요", ["worm", "fly"]],
+    ["내 AI vs 초파리", "내 AI(파랑)와 초파리 뇌(주황)의 대결을 구경합니다", ["ai", "fly"]],
   ];
   let mode = 0;
   function players(game) {
-    if (mode === 2) return [BR.worm[game], BR.fly[game]];
-    return [null, BR[mode === 0 ? "worm" : "fly"][game]];
+    return MODES[mode][2].map(k => (k === null ? null : k === "ai" ? makeAI() : BR[k][game]));
+  }
+
+  // ------------------------------------------------------------ my AI (ordinary neural net, see ai.py)
+  // 9 inputs -> 32 tanh -> 32 tanh -> 1 tanh. Weights come from web/ai.js (python export_web.py).
+  function makeAI() {
+    const d = window.AI_DATA, H = d.hidden, th = d.theta, n = d.nIn;
+    let k = 0;
+    const take = m => { const a = th.slice(k, k + m); k += m; return a; };
+    const W1 = take(n * H), b1 = take(H), W2 = take(H * H), b2 = take(H), W3 = take(H), b3 = take(1)[0];
+    const lastState = new Float64Array(2 * H);
+    return {
+      wiring: { label: "내 AI", N: 2 * H, order: [...Array(2 * H).keys()],
+                info: [`일반 신경망 ${n} → ${H} → ${H} → 1 (커넥톰 아님)`,
+                       `스스로 연습 ${d.gens}세대 · 경기 ${d.games.toLocaleString()}판`,
+                       "회전·상대 위치·내 지난 움직임까지 봄"] },
+      lastState, prev: 0,
+      act(x) {
+        const h1 = new Float64Array(H), h2 = new Float64Array(H);
+        for (let j = 0; j < H; j++) { let s = b1[j]; for (let i = 0; i < n; i++) s += x[i] * W1[i * H + j]; h1[j] = Math.tanh(s); }
+        for (let j = 0; j < H; j++) { let s = b2[j]; for (let i = 0; i < H; i++) s += h1[i] * W2[i * H + j]; h2[j] = Math.tanh(s); }
+        let o = b3; for (let i = 0; i < H; i++) o += h2[i] * W3[i];
+        lastState.set(h1); lastState.set(h2, H);
+        return (this.prev = Math.tanh(o));
+      },
+    };
   }
   function gauss() { return Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random()); }
   const clip = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -156,7 +183,7 @@
   };
   const GAMES = [
     { key: "1", name: "패들볼", art: ART.paddle, input: "A/D · ←/→", make: () => PaddleBall(),
-      desc: "공을 받아치세요. 판을 움직이면서 치면 회전이 걸려 휘어요. 공은 랠리할수록 빨라집니다." },
+      desc: "공을 받아치세요. 판을 움직이면서 치면 회전이 걸려 휘고, 회전이 셀수록 공이 빨라져요." },
   ];
 
   function renderMenu() {
@@ -193,25 +220,37 @@
     canvas.focus && canvas.focus();
   }
 
-  // ------------------------------------------------------------ paddle ball
+  // ------------------------------------------------------------ paddle ball (same rules as paddle.py)
   const pongFeatures = (bx, by, vx, vy, py) => [bx * 2 - 1, by * 2 - 1, vx * 40, vy * 40, py * 2 - 1, (by - py) * 2];
+  const PH = 0.18, BRAIN_SPD = 0.018, SERVE_V = 0.01;
+  // Spin is stored as "paddle speed it came from": hitting while moving the same way adds,
+  // moving the other way cancels or flips it. The ball curves against its spin (Magnus),
+  // and the more it spins, the faster it flies (up to 1 + SPIN_SPEED times).
+  const PUSH = 0.4, CURVE = 0.012, SPIN_DECAY = 0.993, VY_MAX = 0.03, SPIN_GAIN = 1.2, SPIN_MAX = 0.05, SPIN_SPEED = 1.0;
+  const speedFactor = spin => 1 + SPIN_SPEED * Math.min(Math.abs(spin) / SPIN_MAX, 1);
+  // a ball as seen from `side` (+1 orange, -1 blue): mirrored so everyone sits at x = 0.97
+  function view(ball, side) {
+    const [bx, by, vx, vy, spin] = ball, f = speedFactor(spin);
+    return side < 0 ? [1 - bx, by, -vx * f, vy * f, spin] : [bx, by, vx * f, vy * f, spin];
+  }
+  function decide(p, ball, side, me, opp) {
+    const [bx, by, vx, vy, spin] = view(ball, side);
+    if (p.act) return p.act([bx * 2 - 1, by * 2 - 1, vx * 40, vy * 40, spin / SPIN_MAX, me * 2 - 1, (by - me) * 2, opp * 2 - 1, p.prev]);
+    return p.predict(pongFeatures(bx, by, vx, vy, me))[0];
+  }
+  const movePaddle = (pos, out) => clip(pos + BRAIN_SPD * clip(out, -1, 1), PH / 2, 1 - PH / 2);
 
   function PaddleBall() {
     const [left, right] = players("pong"); // left (bottom) null = human
     const auto = !!left;
-    const PH = 0.18, BRAIN_SPD = 0.018, GOAL = 7;
-    // Spin is stored as "paddle speed it came from": hitting while moving the same way adds,
-    // moving the other way cancels or flips it. The ball curves against its spin (Magnus).
-    const PUSH = 0.4, CURVE = 0.012, SPIN_DECAY = 0.993, VY_MAX = 0.03, SPIN_GAIN = 1.2, SPIN_MAX = 0.05;
-    // Ball speeds up at every centre-line crossing; spin and sideways limits grow with it.
-    const SERVE_V = 0.01, CROSS_ACC = 1.025, V_MAX = 0.03;
+    const GOAL = 7;
     // Human paddle has inertia: keys accelerate it, friction slows it down.
     const HUMAN_ACC = 0.0025, FRICTION = 0.88;
     const st = { score: [0, 0], hy: 0.5, hv: 0, by: 0.5, serveDir: 1, ball: null, winner: null, angle: 0, trail: [], wait: 0 };
     setupPanel("패들볼", [left, right], auto ? [] : [
       "아래 파란 판: A/D 또는 ←/→ (관성이 있어요)", "SPACE로 서브",
       "움직이면서 치면 회전이 걸려 휘어요", "회전 방향으로 치면 더 세게, 반대면 약해지거나 뒤집혀요",
-      "공은 중앙선을 넘을 때마다 빨라지고, 그만큼 회전도 더 세게 걸려요", `${GOAL}점 먼저 내면 승리`,
+      "회전이 셀수록 공이 빨라져요 (최대 2배)", `${GOAL}점 먼저 내면 승리`,
     ], auto);
 
     function serve(d) {
@@ -225,36 +264,29 @@
         st.hv = (st.hv + HUMAN_ACC * push) * FRICTION;
         st.hy += st.hv;
         if (!(st.hy > PH / 2 && st.hy < 1 - PH / 2)) st.hv = 0; // stops dead at the wall
-      } else if (ball) {
-        const [bx, by, vx, vy] = ball; // left brain sees a mirrored court
-        st.hy += BRAIN_SPD * clip(left.predict(pongFeatures(1 - bx, by, -vx, vy, st.hy))[0], -1, 1);
-      }
-      st.hy = clip(st.hy, PH / 2, 1 - PH / 2);
+        st.hy = clip(st.hy, PH / 2, 1 - PH / 2);
+      } else if (ball) st.hy = movePaddle(st.hy, decide(left, ball, -1, st.hy, st.by));
       if (auto && !ball) {
         st.wait++;
         if (st.winner && st.wait > 180) { st.score = [0, 0]; st.winner = null; st.wait = 0; }
         else if (!st.winner && st.wait > 50) { st.ball = serve(st.serveDir); st.trail = []; st.wait = 0; }
       }
       if (!ball) return;
+      st.by = movePaddle(st.by, decide(right, ball, 1, st.by, st.hy));
       let [bx, by, vx, vy, spin] = ball;
-      st.by = clip(st.by + BRAIN_SPD * clip(right.predict(pongFeatures(bx, by, vx, vy, st.by))[0], -1, 1), PH / 2, 1 - PH / 2);
       const vel = { "-1": st.hy - oldH, "1": st.by - oldB };
-      const level = Math.abs(vx) / SERVE_V, vyMax = VY_MAX * level, spinMax = SPIN_MAX * level;
-      vy = clip(vy - spin * CURVE, -vyMax, vyMax);
+      vy = clip(vy - spin * CURVE, -VY_MAX, VY_MAX);
       spin *= SPIN_DECAY;
       st.angle += spin * 30;
-      if ((bx - 0.5) * (bx + vx - 0.5) < 0) { // crossing the centre line -> speed up
-        const k = Math.min(Math.abs(vx) * CROSS_ACC, V_MAX) / Math.abs(vx);
-        vx *= k; vy *= k;
-      }
-      bx += vx; by += vy;
+      const f = speedFactor(spin);
+      bx += vx * f; by += vy * f;
       if (by < 0 || by > 1) { vy = -vy; by = clip(by, 0, 1); spin *= 0.7; }
       for (const [px, py, side] of [[0.03, st.hy, -1], [0.97, st.by, 1]]) {
         if ((bx - px) * side >= 0 && vx * side > 0 && Math.abs(by - py) < PH / 2 + 0.01) {
           vx = -vx;
           const pv = vel[side];
-          vy = clip(vy + (by - py) * 0.06 + pv * PUSH, -vyMax, vyMax);
-          spin = clip(spin + pv * SPIN_GAIN, -spinMax, spinMax);
+          vy = clip(vy + (by - py) * 0.06 + pv * PUSH, -VY_MAX, VY_MAX);
+          spin = clip(spin + pv * SPIN_GAIN, -SPIN_MAX, SPIN_MAX);
           bx = px;
         }
       }
@@ -281,8 +313,8 @@
         const ph = PH * GAME_W;
         ctx.fillStyle = HUMAN_C; ctx.fillRect(hy * GAME_W - ph / 2, 0.97 * H, ph, 12);
         ctx.fillStyle = BRAIN_C; ctx.fillRect(by * GAME_W - ph / 2, 0.03 * H - 12, ph, 12);
-        const level = ball ? Math.abs(ball[2]) / SERVE_V : 1;
-        const amt = ball ? Math.min(Math.abs(ball[4]) / (SPIN_MAX * level), 1) : 0;
+        const level = ball ? speedFactor(ball[4]) : 1;
+        const amt = ball ? Math.min(Math.abs(ball[4]) / SPIN_MAX, 1) : 0;
         const dir = !ball || amt < 0.05 ? "" : ball[4] > 0 ? "←" : "→";
         if (ball) {
           ctx.fillStyle = `rgb(${120 + 135 * amt | 0},${120 - 40 * amt | 0},${140 + 40 * amt | 0})`;

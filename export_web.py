@@ -66,3 +66,6 @@ def export():
 
 if __name__ == "__main__":
     export()
+    import ai
+    if ai.load() is not None:
+        print("my AI ->", ai.export_js())

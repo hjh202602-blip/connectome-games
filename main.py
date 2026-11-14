@@ -1,7 +1,9 @@
-"""Play paddle ball against a real connectome brain (worm or fly)."""
+"""Play paddle ball against a real connectome brain (worm or fly) or my own trained AI."""
 import numpy as np
 import pygame as pg
+import ai
 import games as g
+import paddle as pd
 from train import load_or_train
 
 W, H, GAME_W = 980, 640, 640
@@ -24,18 +26,45 @@ def font(size, bold=False):
 
 
 F_BIG, F_MID, F_SMALL, F_TINY = font(40, True), font(24, True), font(17), font(13)
+F_MODE = font(18, True)
 BRAINS = [("worm", "꼬마선충"), ("fly", "초파리")]
-MODES = [("사람 vs 꼬마선충", "C. elegans 뉴런 302개 전부 (Cook 2019)"),
-         ("사람 vs 초파리", "FlyWire 초파리 뇌에서 잘라낸 뉴런 2,000개 회로 (2024)"),
-         ("꼬마선충 vs 초파리", "두 뇌끼리 대결합니다. 배속 조절, 그만 보기 버튼이 있어요")]
+# (label, description, uses my AI, (blue, orange)); None = human
+MODES = [("사람 vs 꼬마선충", "C. elegans 뉴런 302개 전부 (Cook 2019)", False, (None, "worm")),
+         ("사람 vs 초파리", "FlyWire 초파리 뇌에서 잘라낸 뉴런 2,000개 회로 (2024)", False, (None, "fly")),
+         ("사람 vs 내 AI", "스스로 연습해 회전 공을 읽고 거는 신경망 (python train_ai.py)", True, (None, "ai")),
+         ("꼬마선충 vs 초파리", "두 뇌끼리 대결을 구경합니다. 배속 조절, 그만 보기 버튼이 있어요", False, ("worm", "fly")),
+         ("내 AI vs 초파리", "내 AI(파랑)와 초파리 뇌(주황)의 대결을 구경합니다", True, ("ai", "fly"))]
 current = [0]  # index into MODES
+MY_AI = [ai.load()]
 
 
 def players(game):
     """(blue player, orange player). None = human. Blue is the left paddle / first seat."""
-    if current[0] == 2:
-        return load_or_train("worm", game), load_or_train("fly", game)
-    return None, load_or_train(BRAINS[current[0]][0], game)
+    def get(k):
+        if k is None:
+            return None
+        if k == "ai":
+            MY_AI[0] = ai.load()  # pick up a freshly trained AI
+            if MY_AI[0]:
+                MY_AI[0].prev = 0.0
+            return MY_AI[0]
+        return load_or_train(k, game)
+    return tuple(get(k) for k in MODES[current[0]][3])
+
+
+def no_ai():
+    screen.fill(BG)
+    text("아직 학습된 내 AI가 없어요", F_MID, FG, (W // 2, H // 2 - 20), center=True)
+    text("터미널에서 python train_ai.py 를 실행해 학습시킨 뒤 다시 하세요 (아무 키나 누르면 메뉴로)",
+         F_SMALL, DIM, (W // 2, H // 2 + 24), center=True)
+    pg.display.flip()
+    while True:
+        for ev in pg.event.get():
+            if ev.type == pg.QUIT:
+                raise SystemExit
+            if ev.type in (pg.KEYDOWN, pg.MOUSEBUTTONDOWN):
+                return
+        clock.tick(30)
 
 
 def name(p):
@@ -134,21 +163,27 @@ def quit_check(ev):
 
 
 # ---------------------------------------------------------------- Paddle ball
+def decide(p, ball, side, me, opp):
+    """Paddle move (-1..1) for a brain or my AI playing on `side` (+1 orange/top, -1 blue/bottom)."""
+    b = np.asarray(ball, float)
+    if isinstance(p, ai.PaddleAI):
+        return p.act(b, side, me, opp)
+    # the brains were trained as the orange paddle, so the blue one sees a mirrored court
+    bx, by, vx, vy, _ = pd.view(b, side)
+    return float(p(g.pong_features(bx, by, vx, vy, me))[0])
+
+
 def play_paddle():
     loading("패들볼")
     left, right = players("pong")  # left (bottom) None = human on A/D
+    if MODES[current[0]][2] and MY_AI[0] is None:
+        no_ai()
+        return
     auto = left is not None
-    PH, BRAIN_SPD, GOAL = 0.18, 0.018, 7
-    # Spin: a paddle that is moving when it hits the ball brushes it and makes it spin.
-    # The ball is first pushed the way the paddle moved, then curves back the other way
-    # (Magnus effect, like a sidespin shot in table tennis).
-    # Spin is stored as "paddle speed it came from", so hitting while moving the same way
-    # as the spin adds to it, and moving the other way cancels it or flips it.
-    PUSH, CURVE, SPIN_DECAY, VY_MAX = 0.4, 0.012, 0.993, 0.03
-    SPIN_GAIN, SPIN_MAX = 1.2, 0.05
-    # The ball gets faster every time it crosses the centre line. Spin and sideways speed
-    # limits grow with it ("level" = ball speed / serve speed).
-    SERVE_V, CROSS_ACC, V_MAX = 0.01, 1.025, 0.03
+    PH, GOAL = pd.PH, 7
+    # Physics lives in paddle.py. Spin: a paddle that is moving when it hits the ball
+    # brushes it and makes it spin; the ball curves (Magnus effect) and the more it
+    # spins, the faster it flies.
     # Human paddle has inertia: keys accelerate it, friction slows it down.
     HUMAN_ACC, FRICTION = 0.0025, 0.88
     st = dict(score=[0, 0], hy=0.5, hv=0.0, by=0.5, serve_dir=1, ball=None, winner=None,
@@ -156,8 +191,7 @@ def play_paddle():
     speed_i = 0
 
     def serve(d):
-        a = np.random.uniform(-0.6, 0.6)
-        return [0.5, 0.5, d * SERVE_V * np.cos(a), SERVE_V * np.sin(a), 0.0]
+        return list(pd.serve(d, np.random.default_rng(), 1)[0])
 
     def step(keys):
         old_h, old_b = st["hy"], st["by"]
@@ -168,12 +202,9 @@ def play_paddle():
             st["hy"] += st["hv"]
             if not PH / 2 < st["hy"] < 1 - PH / 2:
                 st["hv"] = 0.0  # stops dead at the wall
+            st["hy"] = min(max(st["hy"], PH / 2), 1 - PH / 2)
         elif ball:
-            # the brains were trained as the right paddle, so the left one sees a mirrored court
-            bx, byy, vx, vy, _ = ball
-            out = left(g.pong_features(1 - bx, byy, -vx, vy, st["hy"]))[0]
-            st["hy"] += BRAIN_SPD * float(np.clip(out, -1, 1))
-        st["hy"] = min(max(st["hy"], PH / 2), 1 - PH / 2)
+            st["hy"] = float(pd.move(st["hy"], decide(left, ball, -1, st["hy"], st["by"]))[0])
         if auto and ball is None:
             st["wait"] += 1
             if st["winner"] and st["wait"] > 180:
@@ -182,34 +213,14 @@ def play_paddle():
                 st["ball"], st["trail"], st["wait"] = serve(st["serve_dir"]), [], 0
         if not ball:
             return
-        bx, byy, vx, vy, spin = ball
-        out = right(g.pong_features(bx, byy, vx, vy, st["by"]))[0]
-        st["by"] = min(max(st["by"] + BRAIN_SPD * float(np.clip(out, -1, 1)), PH / 2), 1 - PH / 2)
-        vel = {-1: st["hy"] - old_h, 1: st["by"] - old_b}  # paddle speed this frame
-        level = abs(vx) / SERVE_V
-        vy_max, spin_max = VY_MAX * level, SPIN_MAX * level
-        vy = float(np.clip(vy - spin * CURVE, -vy_max, vy_max))  # curve
-        spin *= SPIN_DECAY
-        st["angle"] += spin * 30
-        if (bx - 0.5) * (bx + vx - 0.5) < 0:  # crossing the centre line -> speed up
-            k = min(abs(vx) * CROSS_ACC, V_MAX) / abs(vx)
-            vx, vy = vx * k, vy * k
-        bx, byy = bx + vx, byy + vy
-        if byy < 0 or byy > 1:
-            vy, byy = -vy, min(max(byy, 0), 1)
-            spin *= 0.7  # the wall rubs some spin off
-        for px, py, side in ((0.03, st["hy"], -1), (0.97, st["by"], 1)):
-            if (bx - px) * side >= 0 and vx * side > 0 and abs(byy - py) < PH / 2 + 0.01:
-                vx = -vx
-                pv = vel[side]
-                vy = float(np.clip(vy + (byy - py) * 0.06 + pv * PUSH, -vy_max, vy_max))
-                # same direction as the spin -> faster spin; opposite -> weaker or reversed
-                spin = float(np.clip(spin + pv * SPIN_GAIN, -spin_max, spin_max))
-                bx = px
-        st["ball"] = [bx, byy, vx, vy, spin]
-        st["trail"] = (st["trail"] + [(bx, byy)])[-14:]
-        if bx < -0.02 or bx > 1.02:
-            p = 1 if bx < 0 else 0
+        st["by"] = float(pd.move(st["by"], decide(right, ball, 1, st["by"], st["hy"]))[0])
+        nb, scored, _ = pd.step(np.array([ball]), st["hy"], st["by"], st["hy"] - old_h, st["by"] - old_b)
+        ball = [float(v) for v in nb[0]]
+        st["angle"] += ball[4] * 30
+        st["ball"] = ball
+        st["trail"] = (st["trail"] + [(ball[0], ball[1])])[-14:]
+        if scored[0]:
+            p = 1 if scored[0] > 0 else 0  # +1: orange scored
             st["score"][p] += 1
             st["serve_dir"] = 1 if p == 0 else -1
             st["ball"], st["wait"] = None, 0
@@ -245,8 +256,8 @@ def play_paddle():
         ph = PH * GAME_W
         pg.draw.rect(screen, HUMAN_C, (hy * GAME_W - ph / 2, 0.97 * H, ph, 12))
         pg.draw.rect(screen, BRAIN_C, (by_ * GAME_W - ph / 2, 0.03 * H - 12, ph, 12))
-        level = abs(ball[2]) / SERVE_V if ball else 1.0
-        spin_amt = min(abs(ball[4]) / (SPIN_MAX * level), 1) if ball else 0
+        spin_amt = min(abs(ball[4]) / pd.SPIN_MAX, 1) if ball else 0
+        level = float(pd.speed_factor(ball[4])) if ball else 1.0
         # positive spin bends the ball toward smaller y = leftwards on screen
         curve_dir = "" if not ball or spin_amt < 0.05 else ("←" if ball[4] > 0 else "→")
         if ball:
@@ -270,7 +281,7 @@ def play_paddle():
         if not auto:
             lines += ["사람(아래): A/D 또는 ←/→ (관성 있음)","움직이면서 치면 회전이 걸려 휘어요",
                       "같은 방향으로 치면 더 세게, 반대면 약하게"]
-        lines += [f"공 속도 ×{level:.1f} (중앙선 넘을 때마다 빨라짐)",
+        lines += [f"공 속도 ×{level:.1f} (회전이 셀수록 빨라짐)",
                   f"회전 {'■' * round(spin_amt * 10)}{'□' * (10 - round(spin_amt * 10))} {curve_dir}",
                   f"{GOAL}점 먼저 내면 승리"]
         draw_panel([left, right], "패들볼", lines)
@@ -290,13 +301,13 @@ def menu():
         text("실제 커넥톰의 배선을 그대로 쓰고, 수를 읽어내는 출력층만 학습시킨 AI입니다.",
              F_SMALL, DIM, (W // 2, 120), center=True)
         mouse = pg.mouse.get_pos()
-        for k, (label, desc) in enumerate(MODES):
-            r = pg.Rect(W // 2 - 465 + k * 315, 160, 300, 60)
+        for k, (label, *_) in enumerate(MODES):
+            r = pg.Rect(W // 2 - 480 + k * 194, 160, 184, 60)
             brain_rects.append(r)
             on = k == current[0]
             pg.draw.rect(screen, (70, 50, 30) if on else (32, 36, 50), r, border_radius=12)
             pg.draw.rect(screen, BRAIN_C if on else (60, 65, 80), r, 2, border_radius=12)
-            text(label, F_MID, FG if on else DIM, r.center, center=True)
+            text(label, F_MODE, FG if on else DIM, r.center, center=True)
         text(MODES[current[0]][1], F_SMALL, DIM, (W // 2, 240), center=True)
         for k, (key, label, fn) in enumerate(items):
             r = pg.Rect(W // 2 - 180, 290 + k * 90, 360, 66)
