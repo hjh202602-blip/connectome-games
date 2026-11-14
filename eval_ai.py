@@ -20,17 +20,25 @@ def brain_out(b, ball, side, me):
     return b.predict(np.asarray(pong_features(bx, by, vx, vy, me)).T)[:, 0]
 
 
-def match(ver, opp_name, rng):
-    """my AI `ver` (orange) against opp_name (blue). Returns points won/lost, hits, spin."""
-    theta = ai.load_theta(ai.path(ver))[0][None]
-    opp_theta = ai.load_theta(ai.path(opp_name))[0][None] if opp_name in ai.VERSIONS else None
-    opp = load_or_train(opp_name, "pong") if opp_name in ("worm", "fly") else None
+def _theta(x):
+    return ai.load_theta(ai.path(x))[0] if isinstance(x, str) else np.asarray(x, float)
+
+
+def match(ver, opp_name, rng, n=None):
+    """Trained AI `ver` (orange; a version or a weight vector) against opp_name (blue:
+    'worm', 'fly', 'pred', a version or a weight vector). Returns points won/lost, hits,
+    mean spin of its returns and how far from the opponent they were aimed (0..1)."""
+    N = n or globals()["N"]
+    theta = _theta(ver)[None]
+    is_ai = not isinstance(opp_name, str) or opp_name in ai.VERSIONS
+    opp_theta = _theta(opp_name)[None] if is_ai else None
+    opp = load_or_train(opp_name, "pong") if not is_ai and opp_name in ("worm", "fly") else None
     ball = pd.serve(np.where(rng.random(N) < 0.5, 1, -1), rng, N)
     me, op = np.full(N, 0.5), np.full(N, 0.5)
     prev, op_prev, target = np.zeros(N), np.zeros(N), np.full(N, 0.5)
     vel, op_vel = np.zeros(N), np.zeros(N)
     won = lost = hits = 0
-    spin = []
+    spin, far = [], []
     for t in range(FRAMES):
         out = ai.forward(theta, ai.features(ball, 1, me, op, prev, vel)[None])[0][0]
         if opp_theta is not None:
@@ -52,14 +60,17 @@ def match(ver, opp_name, rng):
         lost += (scored < 0).sum()
         hits += (hit > 0).sum()
         spin += list(np.abs(ball[hit > 0, 4]) / pd.SPIN_MAX)
+        if (hit > 0).any():
+            land = pd.predict_landing(ball[hit > 0], -1, 200)
+            far += list(np.minimum(np.abs(land - op[hit > 0]) / 0.4, 1))
         if scored.any():
             new = pd.serve(np.where(scored > 0, -1, 1), rng, N)
             ball = np.where((scored != 0)[:, None], new, ball)
-    return won, lost, hits, np.mean(spin) if spin else 0
+    return won, lost, hits, (np.mean(spin) if spin else 0), (np.mean(far) if far else 0)
 
 
 def _run(pair):
-    w, l, h, s = match(*pair, np.random.default_rng(7))  # same serves for every pairing
+    w, l, h, s, _ = match(*pair, np.random.default_rng(7))  # same serves for every pairing
     return pair, w, l, h, s
 
 
