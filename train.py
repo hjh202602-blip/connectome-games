@@ -1,8 +1,7 @@
 """Train each brain's readout for each game and save it to models/.
 
     python train.py                 # everything
-    python train.py fly             # one brain, all games
-    python train.py worm pong       # one brain, one game
+    python train.py fly             # one brain
 
 main.py trains automatically the first time a model is missing.
 """
@@ -15,7 +14,7 @@ import games as g
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODELS = os.path.join(HERE, "models")
-SIZES = {"pong": (6, 1), "ttt": (18, 9), "c4": (84, 7)}
+SIZES = {"pong": (6, 1)}
 BRAINS = ("worm", "fly")
 
 
@@ -35,15 +34,7 @@ def save(brain, key, game):
 def train(key, game, log=print):
     rng = np.random.default_rng(1)
     t = time.time()
-    if game == "pong":
-        return train_pong(key, rng, t, log)
-    X, Y = g.ttt_dataset() if game == "ttt" else g.c4_dataset(250, rng)
-    brain = new_brain(key, game)
-    brain.fit(X, Y)
-    save(brain, key, game)
-    log(f"{key} {game}: {len(X)} examples, {time.time() - t:.1f}s, "
-        f"picks the teacher's best move {best_move_rate(brain, X, Y):.0%}")
-    return brain
+    return train_pong(key, rng, t, log)
 
 
 def pong_rollouts(brain, n, rng):
@@ -85,13 +76,6 @@ def train_pong(key, rng, t, log):
     hit = pong_rollouts(brain, 300, np.random.default_rng(5))[2]
     log(f"{key} pong: {len(X)} examples, {time.time() - t:.1f}s, returns {hit:.0%} of balls")
     return brain
-
-
-def best_move_rate(brain, X, Y):
-    P = brain.predict(X)
-    P[Y <= -1.5] = -np.inf
-    pick = P.argmax(1)
-    return float(np.mean(Y[np.arange(len(Y)), pick] >= Y.max(1) - 1e-9))
 
 
 def load_or_train(key, game, log=print):

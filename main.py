@@ -1,4 +1,4 @@
-"""Play paddle ball, tic-tac-toe and four-in-a-row against a real connectome brain (worm or fly)."""
+"""Play paddle ball against a real connectome brain (worm or fly)."""
 import numpy as np
 import pygame as pg
 import games as g
@@ -122,7 +122,7 @@ def handle_controls(ev, speed_i):
 def loading(name):
     screen.fill(BG)
     text(f"{name}: {MODES[current[0]][0]} 준비 중...", F_MID, FG, (W // 2, H // 2), center=True)
-    text("(처음 한 번만 학습해요. 패들볼·사목은 1~3분 걸려요)", F_SMALL, DIM, (W // 2, H // 2 + 40), center=True)
+    text("(처음 한 번만 학습해요. 1~3분 걸려요)", F_SMALL, DIM, (W // 2, H // 2 + 40), center=True)
     pg.display.flip()
     pg.event.pump()
 
@@ -148,7 +148,7 @@ def play_paddle():
     SPIN_GAIN, SPIN_MAX = 1.2, 0.05
     # The ball gets faster every time it crosses the centre line. Spin and sideways speed
     # limits grow with it ("level" = ball speed / serve speed).
-    SERVE_V, CROSS_ACC, V_MAX = 0.01, 1.05, 0.03
+    SERVE_V, CROSS_ACC, V_MAX = 0.01, 1.025, 0.03
     # Human paddle has inertia: keys accelerate it, friction slows it down.
     HUMAN_ACC, FRICTION = 0.0025, 0.88
     st = dict(score=[0, 0], hy=0.5, hv=0.0, by=0.5, serve_dir=1, ball=None, winner=None,
@@ -280,145 +280,9 @@ def play_paddle():
         clock.tick(FPS)
 
 
-# ---------------------------------------------------------------- Board games
-def play_ttt():
-    loading("틱택토")
-    seats = players("ttt")
-    S, X0, Y0 = 160, (GAME_W - 480) // 2, 50
-    state_human = [1]
-
-    def play(b, i, p):
-        nb = b[:i] + (p,) + b[i + 1:]
-        w = g.ttt_winner(nb)
-        return nb, (w if w else None)
-
-    def mouse(pos):
-        c, r = (pos[0] - X0) // S, (pos[1] - Y0) // S
-        return r * 3 + c if 0 <= c < 3 and 0 <= r < 3 else None
-
-    def draw(b):
-        for k in range(1, 3):
-            pg.draw.line(screen, DIM, (X0 + k * S, Y0), (X0 + k * S, Y0 + 3 * S), 4)
-            pg.draw.line(screen, DIM, (X0, Y0 + k * S), (X0 + 3 * S, Y0 + k * S), 4)
-        for i, p in enumerate(b):
-            cx, cy = X0 + (i % 3) * S + S // 2, Y0 + (i // 3) * S + S // 2
-            if p == 1:
-                d = 45
-                pg.draw.line(screen, HUMAN_C if state_human[0] == 1 else BRAIN_C, (cx - d, cy - d), (cx + d, cy + d), 10)
-                pg.draw.line(screen, HUMAN_C if state_human[0] == 1 else BRAIN_C, (cx - d, cy + d), (cx + d, cy - d), 10)
-            elif p == -1:
-                pg.draw.circle(screen, HUMAN_C if state_human[0] == -1 else BRAIN_C, (cx, cy), 50, 10)
-
-    _run(seats, "틱택토", lambda: (0,) * 9, lambda b: [i for i in range(9) if b[i] == 0],
-         play, lambda b, t: g.ttt_features(b), mouse, draw, state_human)
-
-
-def play_c4():
-    loading("사목")
-    seats = players("c4")
-    S = 78
-    X0, Y0 = (GAME_W - S * g.COLS) // 2, 40
-    state_human = [1]
-
-    def play(b, c, p):
-        nb, r = g.c4_drop(b, c, p)
-        if g.c4_wins(nb, r, c):
-            return nb, p
-        return nb, (2 if not g.c4_legal(nb) else None)
-
-    def mouse(pos):
-        c = (pos[0] - X0) // S
-        return int(c) if 0 <= c < g.COLS else None
-
-    def draw(b):
-        pg.draw.rect(screen, (35, 55, 110), (X0 - 8, Y0 - 8, S * g.COLS + 16, S * g.ROWS + 16), border_radius=12)
-        for r in range(g.ROWS):
-            for c in range(g.COLS):
-                p = b[r, c]
-                col = BG if p == 0 else (HUMAN_C if p == state_human[0] else BRAIN_C)
-                pg.draw.circle(screen, col, (X0 + c * S + S // 2, Y0 + r * S + S // 2), S // 2 - 6)
-        mx = pg.mouse.get_pos()[0]
-        c = (mx - X0) // S
-        if 0 <= c < g.COLS and mx < GAME_W:
-            pg.draw.polygon(screen, DIM, [(X0 + c * S + S // 2 - 12, Y0 + S * g.ROWS + 16),
-                                          (X0 + c * S + S // 2 + 12, Y0 + S * g.ROWS + 16),
-                                          (X0 + c * S + S // 2, Y0 + S * g.ROWS + 4)])
-
-    _run(seats, "사목", g.c4_new, g.c4_legal, play, lambda b, t: g.c4_features(b, t), mouse, draw, state_human)
-
-
-def _run(seats, title, new, legal, play, features, mouse, draw, blue_side):
-    """Turn loop shared by the board games. seats = (blue, orange); None = human.
-    The two seats swap who moves first every game. blue_side[0] is the blue player's
-    side (1 = moves first) so the draw functions can colour the pieces."""
-    auto = all(p is not None for p in seats)
-    blue_first = True
-    stats = [0, 0, 0]  # blue wins, orange wins, draws
-    speed_i = 0
-
-    def start():
-        blue_side[0] = 1 if blue_first else -1
-        return new(), 1, None, pg.time.get_ticks(), False
-
-    state, turn, result, t_turn, counted = start()
-    while True:
-        blue = blue_side[0]
-        mover = seats[0] if turn == blue else seats[1]
-        delay = 450 / SPEEDS[speed_i]
-        for ev in pg.event.get():
-            if quit_check(ev):
-                return
-            if auto:
-                speed_i, stop = handle_controls(ev, speed_i)
-                if stop:
-                    return
-            elif result is not None and ev.type == pg.MOUSEBUTTONDOWN:
-                blue_first = not blue_first
-                state, turn, result, t_turn, counted = start()
-            elif result is None and mover is None and ev.type == pg.MOUSEBUTTONDOWN and ev.button == 1:
-                m = mouse(ev.pos)
-                if m is not None and m in legal(state):
-                    state, result = play(state, m, turn)
-                    turn, t_turn = -turn, pg.time.get_ticks()
-
-        if result is None and mover is not None and pg.time.get_ticks() - t_turn > delay:
-            scores = mover(features(state, turn))
-            if auto:  # brains are deterministic; a little noise keeps brain-vs-brain games varied
-                scores = scores + np.random.normal(0, 0.15, len(scores))
-            m = max(legal(state), key=lambda k: scores[k])
-            state, result = play(state, m, turn)
-            turn, t_turn = -turn, pg.time.get_ticks()
-        if result is not None and not counted:
-            stats[2 if result == 2 else 0 if result == blue else 1] += 1
-            counted, t_turn = True, pg.time.get_ticks()
-        if auto and result is not None and pg.time.get_ticks() - t_turn > 2000 / SPEEDS[speed_i]:
-            blue_first = not blue_first
-            state, turn, result, t_turn, counted = start()
-
-        screen.fill(BG)
-        draw(state)
-        if result is not None:
-            msg = "무승부" if result == 2 else f"{name(seats[0] if result == blue else seats[1])} 승리!"
-            text(msg, F_BIG, FG, (GAME_W // 2, H - 70), center=True)
-            text("곧 다음 판 (선공 교대)" if auto else "클릭하면 다음 판 (선공 교대)",
-                 F_SMALL, DIM, (GAME_W // 2, H - 30), center=True)
-        else:
-            mine = turn == blue
-            msg = "당신 차례 (클릭)" if mover is None else f"{name(mover)} 생각 중..."
-            text(msg, F_MID, HUMAN_C if mine else BRAIN_C, (GAME_W // 2, H - 50), center=True)
-        lines = [f"{name(seats[0])}(파랑) vs {name(seats[1])}(주황)",
-                 f"이번 판 선공: {name(seats[0] if blue == 1 else seats[1])}",
-                 f"전적  {stats[0]} : {stats[1]}   무승부 {stats[2]}"]
-        draw_panel(seats, title, lines)
-        if auto:
-            draw_controls(speed_i)
-        pg.display.flip()
-        clock.tick(FPS)
-
-
 # ---------------------------------------------------------------- Menu
 def menu():
-    items = [("1", "패들볼", play_paddle), ("2", "틱택토", play_ttt), ("3", "사목", play_c4)]
+    items = [("1", "패들볼", play_paddle)]
     while True:
         rects, brain_rects = [], []
         screen.fill(BG)
@@ -439,7 +303,7 @@ def menu():
             rects.append((r, fn))
             pg.draw.rect(screen, (45, 50, 68) if r.collidepoint(mouse) else (32, 36, 50), r, border_radius=12)
             text(f"{key}.  {label}", F_MID, FG, r.center, center=True)
-        text("TAB: 모드 바꾸기 · 숫자키 또는 클릭: 게임 선택 · ESC: 종료", F_SMALL, DIM, (W // 2, H - 52), center=True)
+        text("TAB: 모드 바꾸기 · 1 또는 클릭: 게임 시작 · ESC: 종료", F_SMALL, DIM, (W // 2, H - 52), center=True)
         text("초파리 데이터: FlyWire (CC BY-NC 4.0) · 꼬마선충 데이터: Cook et al. 2019 · 비상업적 사용 · 자세한 출처는 README",
              F_TINY, DIM, (W // 2, H - 22), center=True)
         pg.display.flip()
@@ -448,7 +312,7 @@ def menu():
                 raise SystemExit
             if ev.type == pg.KEYDOWN and ev.key == pg.K_TAB:
                 current[0] = (current[0] + 1) % len(MODES)
-            if ev.type == pg.KEYDOWN and pg.K_1 <= ev.key <= pg.K_3:
+            if ev.type == pg.KEYDOWN and ev.key == pg.K_1:
                 items[ev.key - pg.K_1][2]()
             if ev.type == pg.MOUSEBUTTONDOWN:
                 for k, r in enumerate(brain_rects):

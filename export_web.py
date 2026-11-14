@@ -11,7 +11,6 @@ import json
 import os
 import numpy as np
 import brain as br
-import games as g
 from train import load_or_train, SIZES
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -47,7 +46,7 @@ def export():
                 "bias": b64(m.bias, np.float32),
                 "Wout": b64(m.Wout, np.float32),  # (n_out, n_readout + 1)
             }
-            X = rng.random((3, n_in)) if game == "pong" else (rng.random((3, n_in)) < 0.3).astype(float)
+            X = rng.random((3, n_in))
             tests[f"{key}_{game}"] = {"x": X.tolist(), "y": m.predict(X).tolist()}
         data["brains"][key] = entry
         print(key, "nnz", len(cols))

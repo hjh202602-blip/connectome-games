@@ -1,4 +1,4 @@
-// Browser version of main.py: paddle ball, tic-tac-toe and four-in-a-row against real connectome brains.
+// Browser version of main.py: paddle ball against real connectome brains.
 // The menu and the side panel are HTML (index.html); only the game board is drawn on the canvas.
 (function () {
   "use strict";
@@ -27,7 +27,7 @@
   window.addEventListener("keydown", e => {
     if ($("credits").open) return; // let the credits dialog handle keys
     if (!scene) { // menu: number keys start a game
-      if (e.key >= "1" && e.key <= "3") start(GAMES[+e.key - 1]);
+      if (e.key === "1" || e.key === "Enter") start(GAMES[0]);
       return;
     }
     if ([" ", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) e.preventDefault();
@@ -153,24 +153,10 @@
       <rect x="150" y="24" width="56" height="7" rx="3" fill="#ff9646"/><rect x="86" y="99" width="56" height="7" rx="3" fill="#5aaaff"/>
       <path d="M118 96 Q 190 70 160 40" fill="none" stroke="#c86aa0" stroke-width="2.5" stroke-dasharray="3 5"/>
       <circle cx="160" cy="40" r="6" fill="#e6e8f0"/></svg>`,
-    ttt: `<svg viewBox="0 0 300 130"><g stroke="#4a5068" stroke-width="3"><line x1="128" y1="18" x2="128" y2="112"/>
-      <line x1="172" y1="18" x2="172" y2="112"/><line x1="104" y1="47" x2="196" y2="47"/><line x1="104" y1="83" x2="196" y2="83"/></g>
-      <g stroke="#5aaaff" stroke-width="5" stroke-linecap="round"><path d="M108 22l16 18M124 22l-16 18M152 56l16 18M168 56l-16 18"/></g>
-      <g fill="none" stroke="#ff9646" stroke-width="5"><circle cx="150" cy="31" r="9"/><circle cx="184" cy="65" r="9"/></g></svg>`,
-    c4: `<svg viewBox="0 0 300 130"><rect x="85" y="14" width="130" height="104" rx="8" fill="#23376e"/>
-      ${[...Array(24).keys()].map(i => {
-        const r = Math.floor(i / 6), c = i % 6;
-        const filled = { "3,1": "#5aaaff", "3,2": "#ff9646", "3,3": "#5aaaff", "2,2": "#5aaaff", "2,3": "#ff9646", "1,3": "#ff9646", "3,4": "#ff9646", "2,4": "#5aaaff" }[`${r},${c}`];
-        return `<circle cx="${102 + c * 19.2}" cy="${30 + r * 24}" r="8" fill="${filled || "#12141c"}"/>`;
-      }).join("")}</svg>`,
   };
   const GAMES = [
     { key: "1", name: "패들볼", art: ART.paddle, input: "A/D · ←/→", make: () => PaddleBall(),
       desc: "공을 받아치세요. 판을 움직이면서 치면 회전이 걸려 휘어요. 공은 랠리할수록 빨라집니다." },
-    { key: "2", name: "틱택토", art: ART.ttt, input: "클릭", make: () => TicTacToe(),
-      desc: "3×3 칸에 자기 표시로 한 줄을 먼저 만들면 이깁니다." },
-    { key: "3", name: "사목", art: ART.c4, input: "클릭", make: () => FourInARow(),
-      desc: "돌을 떨어뜨려 가로·세로·대각선으로 4개를 먼저 이으면 이깁니다." },
   ];
 
   function renderMenu() {
@@ -218,7 +204,7 @@
     // moving the other way cancels or flips it. The ball curves against its spin (Magnus).
     const PUSH = 0.4, CURVE = 0.012, SPIN_DECAY = 0.993, VY_MAX = 0.03, SPIN_GAIN = 1.2, SPIN_MAX = 0.05;
     // Ball speeds up at every centre-line crossing; spin and sideways limits grow with it.
-    const SERVE_V = 0.01, CROSS_ACC = 1.05, V_MAX = 0.03;
+    const SERVE_V = 0.01, CROSS_ACC = 1.025, V_MAX = 0.03;
     // Human paddle has inertia: keys accelerate it, friction slows it down.
     const HUMAN_ACC = 0.0025, FRICTION = 0.88;
     const st = { score: [0, 0], hy: 0.5, hv: 0, by: 0.5, serveDir: 1, ball: null, winner: null, angle: 0, trail: [], wait: 0 };
@@ -331,171 +317,6 @@
         }
       },
     };
-  }
-
-  // ------------------------------------------------------------ board games
-  // Turn loop shared by the board games. seats = [blue, orange]; null = human.
-  // The two seats swap who moves first each game. blueSide = 1 when blue moves first.
-  function BoardGame(game, title, rules) {
-    const seats = players(game);
-    const auto = seats.every(p => p);
-    let blueFirst = true, stats = [0, 0, 0];
-    setupPanel(title, seats, auto ? [] : [rules.help, "판마다 선공이 바뀌어요", "판이 끝나면 클릭해서 다음 판"], auto);
-    let s, turn, result, tTurn, counted, blueSide;
-    function start() {
-      blueSide = blueFirst ? 1 : -1;
-      s = rules.create(); turn = 1; result = null; tTurn = performance.now(); counted = false;
-    }
-    start();
-    const mover = () => (turn === blueSide ? seats[0] : seats[1]);
-    function move(m) {
-      [s, result] = rules.play(s, m, turn);
-      turn = -turn; tTurn = performance.now();
-    }
-    return {
-      update() {
-        const now = performance.now(), sp = auto ? SPEEDS[si] : 1, p = mover();
-        if (result === null && p && now - tTurn > 450 / sp) {
-          let scores = p.predict(rules.features(s, turn));
-          if (auto) scores = scores.map(v => v + 0.15 * gauss()); // keep brain-vs-brain games varied
-          const legal = rules.legal(s);
-          move(legal.reduce((a, b) => (scores[b] > scores[a] ? b : a)));
-        }
-        if (result !== null && !counted) {
-          stats[result === 2 ? 2 : result === blueSide ? 0 : 1]++;
-          counted = true; tTurn = now;
-        }
-        if (auto && result !== null && now - tTurn > 2000 / sp) { blueFirst = !blueFirst; start(); }
-      },
-      draw() {
-        ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
-        rules.draw(s, blueSide);
-        if (result !== null) {
-          const msg = result === 2 ? "무승부" : `${nameOf(result === blueSide ? seats[0] : seats[1])} 승리!`;
-          text(msg, F_BIG, FG, GAME_W / 2, H - 70, true);
-          text(auto ? "곧 다음 판 (선공 교대)" : "클릭하면 다음 판 (선공 교대)", F_SMALL, DIM, GAME_W / 2, H - 30, true);
-        } else {
-          const p = mover();
-          text(p ? `${nameOf(p)} 생각 중...` : "당신 차례 (클릭)", F_MID, turn === blueSide ? HUMAN_C : BRAIN_C, GAME_W / 2, H - 50, true);
-        }
-        const first = blueSide === 1 ? 0 : 1;
-        setStats([
-          ["이번 판 선공", `<span style="color:${first ? BRAIN_C : HUMAN_C}">${esc(nameOf(seats[first]))}</span>`],
-          ["전적", `<span style="color:${HUMAN_C}">${stats[0]}승</span> : <span style="color:${BRAIN_C}">${stats[1]}승</span>`],
-          ["무승부", `${stats[2]}`],
-        ]);
-      },
-      auto,
-      click(x, y) {
-        if (auto) return;
-        if (result !== null) { blueFirst = !blueFirst; start(); return; }
-        if (!mover()) {
-          const m = rules.mouse(x, y);
-          if (m !== null && rules.legal(s).includes(m)) move(m);
-        }
-      },
-    };
-  }
-
-  // tic-tac-toe: board = array of 9, 1 = X (moves first), -1 = O
-  const LINES3 = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
-  function tttWinner(b) {
-    for (const [a, c, d] of LINES3) if (b[a] && b[a] === b[c] && b[c] === b[d]) return b[a];
-    return b.includes(0) ? 0 : 2;
-  }
-  function tttFeatures(b) {
-    const t = b.filter(v => v === 1).length === b.filter(v => v === -1).length ? 1 : -1;
-    return [...b.map(v => (v * t === 1 ? 1 : 0)), ...b.map(v => (v * t === -1 ? 1 : 0))];
-  }
-  function TicTacToe() {
-    const S = 160, X0 = (GAME_W - 480) / 2, Y0 = 50;
-    return BoardGame("ttt", "틱택토", {
-      help: "빈 칸을 클릭해서 두세요",
-      create: () => new Array(9).fill(0),
-      legal: b => b.map((v, i) => (v ? -1 : i)).filter(i => i >= 0),
-      play(b, i, p) { const nb = b.slice(); nb[i] = p; const w = tttWinner(nb); return [nb, w ? w : null]; },
-      features: b => tttFeatures(b),
-      mouse(x, y) {
-        const c = Math.floor((x - X0) / S), r = Math.floor((y - Y0) / S);
-        return c >= 0 && c < 3 && r >= 0 && r < 3 ? r * 3 + c : null;
-      },
-      draw(b, blue) {
-        ctx.strokeStyle = DIM; ctx.lineWidth = 4;
-        for (let k = 1; k < 3; k++) {
-          ctx.beginPath(); ctx.moveTo(X0 + k * S, Y0); ctx.lineTo(X0 + k * S, Y0 + 3 * S); ctx.stroke();
-          ctx.beginPath(); ctx.moveTo(X0, Y0 + k * S); ctx.lineTo(X0 + 3 * S, Y0 + k * S); ctx.stroke();
-        }
-        ctx.lineWidth = 10;
-        b.forEach((p, i) => {
-          if (!p) return;
-          const cx = X0 + (i % 3) * S + S / 2, cy = Y0 + Math.floor(i / 3) * S + S / 2;
-          ctx.strokeStyle = p === blue ? HUMAN_C : BRAIN_C;
-          ctx.beginPath();
-          if (p === 1) {
-            const d = 45;
-            ctx.moveTo(cx - d, cy - d); ctx.lineTo(cx + d, cy + d);
-            ctx.moveTo(cx - d, cy + d); ctx.lineTo(cx + d, cy - d);
-          } else ctx.arc(cx, cy, 50, 0, 7);
-          ctx.stroke();
-        });
-      },
-    });
-  }
-
-  // four in a row: board = 6x7 array of rows, row 0 is the top
-  const ROWS = 6, COLS = 7;
-  const c4Legal = b => [...Array(COLS).keys()].filter(c => b[0][c] === 0);
-  function c4Drop(b, c, p) {
-    const nb = b.map(r => r.slice());
-    let r = ROWS - 1;
-    while (nb[r][c] !== 0) r--;
-    nb[r][c] = p;
-    return [nb, r];
-  }
-  function c4Wins(b, r, c) {
-    const p = b[r][c];
-    for (const [dr, dc] of [[0, 1], [1, 0], [1, 1], [1, -1]]) {
-      let k = 1;
-      for (const s of [1, -1]) {
-        let rr = r + dr * s, cc = c + dc * s;
-        while (rr >= 0 && rr < ROWS && cc >= 0 && cc < COLS && b[rr][cc] === p) { k++; rr += dr * s; cc += dc * s; }
-      }
-      if (k >= 4) return true;
-    }
-    return false;
-  }
-  function c4Features(b, p) {
-    const flat = b.flat().map(v => v * p);
-    return [...flat.map(v => (v === 1 ? 1 : 0)), ...flat.map(v => (v === -1 ? 1 : 0))];
-  }
-  function FourInARow() {
-    const S = 78, X0 = (GAME_W - S * COLS) / 2, Y0 = 40;
-    return BoardGame("c4", "사목", {
-      help: "열을 클릭하면 돌이 맨 아래로 떨어져요",
-      create: () => Array.from({ length: ROWS }, () => new Array(COLS).fill(0)),
-      legal: c4Legal,
-      play(b, c, p) {
-        const [nb, r] = c4Drop(b, c, p);
-        if (c4Wins(nb, r, c)) return [nb, p];
-        return [nb, c4Legal(nb).length ? null : 2];
-      },
-      features: c4Features,
-      mouse(x) { const c = Math.floor((x - X0) / S); return c >= 0 && c < COLS ? c : null; },
-      draw(b, blue) {
-        rrect(X0 - 8, Y0 - 8, S * COLS + 16, S * ROWS + 16, 12, "#23376e");
-        for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
-          const p = b[r][c];
-          ctx.fillStyle = p === 0 ? BG : p === blue ? HUMAN_C : BRAIN_C;
-          ctx.beginPath(); ctx.arc(X0 + c * S + S / 2, Y0 + r * S + S / 2, S / 2 - 6, 0, 7); ctx.fill();
-        }
-        const c = Math.floor((mouse.x - X0) / S);
-        if (c >= 0 && c < COLS && mouse.x < GAME_W) {
-          const cx = X0 + c * S + S / 2, by = Y0 + S * ROWS;
-          ctx.fillStyle = DIM;
-          ctx.beginPath(); ctx.moveTo(cx - 12, by + 16); ctx.lineTo(cx + 12, by + 16); ctx.lineTo(cx, by + 4); ctx.fill();
-        }
-      },
-    });
   }
 
   // ------------------------------------------------------------ main loop (fixed 60 updates/s)

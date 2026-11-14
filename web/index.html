@@ -58,6 +58,10 @@
   .mode .desc { color: var(--dim); font-size: 13.5px; }
   .mode[aria-pressed="true"] { border-color: var(--orange); background: linear-gradient(180deg, #2a2016, var(--surface)); }
   .game { display: flex; flex-direction: column; gap: 10px; padding: 0; overflow: hidden; }
+  .grid.one { grid-template-columns: 1fr; }
+  .grid.one .game { flex-direction: row; align-items: stretch; gap: 0; }
+  .grid.one .game svg { width: 42%; height: auto; min-height: 170px; border-bottom: 0; border-right: 1px solid var(--line); }
+  .grid.one .game .body { padding: 22px 26px; justify-content: center; }
   .game svg { display: block; width: 100%; height: 130px; background: #10131b; border-bottom: 1px solid var(--line); }
   .game .body { padding: 4px 20px 18px; display: flex; flex-direction: column; gap: 6px; }
   .game .name { font-weight: 700; font-size: 19px; display: flex; align-items: center; gap: 8px; }
@@ -104,6 +108,8 @@
                  background: linear-gradient(90deg, rgb(40,130,255), rgb(40,40,40), rgb(255,150,40)); }
 
   @media (max-width: 900px) {
+    .grid.one .game { flex-direction: column; }
+    .grid.one .game svg { width: 100%; min-height: 0; height: 130px; border-right: 0; border-bottom: 1px solid var(--line); }
     .grid { grid-template-columns: 1fr; }
     .play-view { flex-direction: column; align-items: stretch; }
     .stage { width: 100%; min-width: 0; }
@@ -143,8 +149,8 @@
     <p class="section-title">상대 고르기</p>
     <div class="grid" id="modes"></div>
 
-    <p class="section-title">게임 고르기</p>
-    <div class="grid" id="games"></div>
+    <p class="section-title">게임</p>
+    <div class="grid one" id="games"></div>
   </section>
 
   <section id="play" class="play-view" hidden>
