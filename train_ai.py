@@ -49,6 +49,9 @@ RETURN_BONUS = 0.02            # small reward for each return, so a fresh net le
 SPIN_BONUS = 0.04              # small reward for putting spin on a return (x spin fraction)
 FAR_BONUS = 0.06               # reward for aiming far from the opponent's paddle: where the
                                # returned ball will land (curve included) vs where they stand
+FOLLOW_BONUS = 0.0             # reward per frame for keeping the paddle near the ball while it comes
+                               # towards you (off for v1-v3; switched on in the score-rule experiment)
+FOLLOW_FULL = 0.4              # this far from the ball (40% of the court) earns nothing
 FAR_FULL = 0.4                 # this far away (40% of the court) earns the whole bonus
 
 
@@ -84,6 +87,8 @@ def play(thetas, opp, games, seed, brains, fly_every=FLY_EVERY):
     hits = np.zeros(shape)
     spin_sum = np.zeros(shape)
     far_sum = np.zeros(shape)
+    follow_sum = np.zeros(shape)   # closeness to the ball, summed over frames it comes towards me
+    toward_n = np.zeros(shape)
     has = set(games)
     for t in range(FRAMES):
         x = ai.features(ball, 1, me, op, me_prev, me_vel)
@@ -128,7 +133,12 @@ def play(thetas, opp, games, seed, brains, fly_every=FLY_EVERY):
         if h.any():
             land = pd.predict_landing(ball[h], -1, 200)  # follows the spin's curve exactly
             far[h] = np.minimum(np.abs(land - op[h]) / FAR_FULL, 1)
-        score += scored + RETURN_BONUS * h + SPIN_BONUS * spun + FAR_BONUS * far
+        _, by, vx, _, _ = pd.view(ball, 1)
+        toward = vx > 0                       # the ball is coming at me
+        close = np.where(toward, 1 - np.minimum(np.abs(by - me) / FOLLOW_FULL, 1), 0)
+        score += scored + RETURN_BONUS * h + SPIN_BONUS * spun + FAR_BONUS * far + FOLLOW_BONUS * close
+        follow_sum += close
+        toward_n += toward
         far_sum += far
         points += scored
         hits += hit > 0
@@ -139,7 +149,8 @@ def play(thetas, opp, games, seed, brains, fly_every=FLY_EVERY):
             new[..., 2] = np.where(scored > 0, -1, 1) * pd.SERVE_V * np.cos(srv[t])
             new[..., 3] = pd.SERVE_V * np.sin(srv[t])
             ball = np.where((scored != 0)[..., None], new, ball)
-    return score, points, hits, spin_sum, far_sum, kind
+    follow = follow_sum / np.maximum(toward_n, 1)   # 0..1, how closely it followed the ball
+    return score, points, hits, spin_sum, far_sum, follow, kind
 
 
 _BRAINS = {}
@@ -202,10 +213,10 @@ def main():
         cands = theta + SIGMA * eps
         if pool:
             parts = pool.map(_work, [(c, opp, games, seed, fly_every) for c in np.array_split(cands, workers)])
-            score, points, hits, spin, far = (np.concatenate([p[i] for p in parts]) for i in range(5))
-            kind = parts[0][5]
+            score, points, hits, spin, far, _ = (np.concatenate([p[i] for p in parts]) for i in range(6))
+            kind = parts[0][6]
         else:
-            score, points, hits, spin, far, kind = play(cands, opp, games, seed, _BRAINS, fly_every)
+            score, points, hits, spin, far, _, kind = play(cands, opp, games, seed, _BRAINS, fly_every)
         fit = score.mean(1)
         # rank-based weights, robust to noisy scores
         ranks = np.empty(pop)

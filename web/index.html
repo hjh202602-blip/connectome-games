@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>진짜 뇌와 대결</title>
+<title>게임 뇌 대결</title>
 <style>
   :root {
     --bg: #0c0d12; --surface: #151821; --surface-2: #1c2030; --line: #2a2f40; --line-2: #3a4156;
@@ -123,6 +123,14 @@
   .lab-table tbody tr[aria-selected="true"] { background: rgba(255, 150, 70, .12); }
   .lab-table tbody tr:last-child td { border-bottom: 0; }
   .muted { color: var(--dim); font-size: 12.5px; margin: 0; }
+  .curve-desc { font-size: 13px; color: var(--dim); margin: 0 0 8px; line-height: 1.55; }
+  .curve-desc strong { color: var(--fg); font-weight: 600; }
+  .curve-help { margin-top: 10px; font-size: 13px; }
+  .curve-help summary { cursor: pointer; color: var(--dim); }
+  .curve-help dl { margin: 8px 0 0; display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; line-height: 1.55; }
+  .curve-help dt { font-weight: 600; }
+  .curve-help dd { margin: 0; color: var(--dim); }
+  @media (max-width: 560px) { .curve-help dl { grid-template-columns: 1fr; } .curve-help dd { margin-bottom: 6px; } }
   @media (max-width: 700px) { .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   footer { text-align: center; color: var(--dim); font-size: 12.5px; padding: 18px 24px 24px; }
 
@@ -186,7 +194,7 @@
 <body>
 <div id="loading">뇌 데이터를 불러오는 중...</div>
 <header>
-  <button class="brand" id="home"><span class="dot"></span>진짜 뇌와 대결</button>
+  <button class="brand" id="home"><span class="dot"></span>게임 뇌 대결</button>
   <button class="btn" id="credits-btn">출처·라이선스</button>
   <button class="btn" id="fs-btn">전체화면</button>
 </header>
@@ -194,7 +202,7 @@
 <main>
   <section id="menu">
     <div class="hero">
-      <h1>진짜 <span class="b">뇌</span>와 <span class="o">대결</span></h1>
+      <h1>게임 <span class="b">뇌</span> <span class="o">대결</span></h1>
       <p>실제 동물 커넥톰의 배선을 그대로 쓰고, 수를 읽어내는 출력층만 학습시킨 AI입니다.
          꼬마선충이나 초파리의 뇌와 겨뤄 보세요.</p>
     </div>

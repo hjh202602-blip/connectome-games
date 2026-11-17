@@ -15,7 +15,7 @@ FPS = 60
 pg.init()
 # SCALED keeps the 980x640 layout and stretches it to the monitor (mouse is mapped too)
 screen = pg.display.set_mode((W, H), pg.FULLSCREEN | pg.SCALED)
-pg.display.set_caption("Connectome Games - 진짜 뇌와 대결")
+pg.display.set_caption("Connectome Games - 게임 뇌 대결")
 clock = pg.time.Clock()
 
 
@@ -329,7 +329,7 @@ def choice_row(y, keys, chosen, label=None):
 def menu():
     while True:
         screen.fill(BG)
-        text("진짜 뇌와 대결", F_BIG, FG, (W // 2, 60), center=True)
+        text("게임 뇌 대결", F_BIG, FG, (W // 2, 60), center=True)
         text("실제 커넥톰의 배선을 그대로 쓴 곤충 뇌, 그리고 스스로 연습한 학습 AI와 패들볼을 칩니다.",
              F_SMALL, DIM, (W // 2, 106), center=True)
         mouse = pg.mouse.get_pos()

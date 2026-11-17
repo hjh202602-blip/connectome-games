@@ -141,7 +141,8 @@
     v2: ["학습 AI v2", "v1이 꼬마선충·초파리 뇌와 겨루며 더 배운 신경망"],
     v3: ["학습 AI v3", "v2가 곤충 뇌, 그리고 v2 자신을 이기도록 더 크게 학습한 신경망"],
   };
-  const isAI = k => /^(v\d+|ab:[01]{3})$/.test(k || "");
+  const isAI = k => /^(v\d+|ab:[01]+)$/.test(k || "");
+  const FULL = window.ABL_DATA ? "1".repeat(window.ABL_DATA.bonus.length) : ""; // every bonus on
   const VERS = Object.keys(PLAYERS).filter(k => isAI(k) && (window.AI_DATA || {})[k]); // hide untrained AIs
   const TABS = [
     ["사람 vs 곤충 뇌", ["worm", "fly"]],
@@ -150,7 +151,7 @@
     ["점수 방식 실험", window.ABL_DATA ? ["lab"] : []],
   ].filter(t => t[1].length);
   const sel = { tab: 0, 0: "worm", 1: VERS[0], 2: null, blue: "worm", orange: VERS[0] || "fly",
-                lab: "111", labOpp: null, metric: "far" };
+                lab: FULL, labOpp: null, metric: "far" };
   const tabName = () => TABS[sel.tab][0];
   const pair = () => (tabName() === "대결" ? [sel.blue, sel.orange]
     : tabName() === "점수 방식 실험" ? [sel.labOpp, "ab:" + sel.lab] : [null, sel[sel.tab]]);
@@ -201,7 +202,7 @@
   ];
 
   // ------------------------------------------------------------ score-rule experiment (web/ablation.js)
-  // The same AI trained from scratch 8 times, once per on/off combination of the 3 bonuses.
+  // The same AI trained from scratch once per on/off combination of the bonuses (16 for 4).
   const ABL = window.ABL_DATA;
   function comboName(key) {
     const on = ABL.bonus.filter((b, i) => key[i] === "1").map(b => b.name);
@@ -217,13 +218,26 @@
     ["pred", "예측 상대에게 잃은 점수 (60초당)", e => (e.pred ? e.pred[1] / ABL.evalRallies : 0), x => x.toFixed(2), false],
     ["spin", "친 공의 평균 회전", e => e.spin || 0, pct, true],
     ["far", "상대에게서 먼 쪽으로", e => e.far || 0, pct, true],
+    ["follow", "공 따라가기", e => e.follow || 0, pct, true],
     ["hits", "60초 동안 받아친 공", e => e.hits || 0, x => x.toFixed(1), true],
   ];
-  // learning curves recorded during training
+  // learning curves recorded during training: [button, text, what it means]
   const LAB_CURVES = {
-    far: ["먼 쪽으로", pct], spin: ["회전", pct], hits: ["받아친 공 (20초)", x => x.toFixed(1)],
-    pred: ["예측 상대 득실 (20초)", x => (x > 0 ? "+" : "") + x.toFixed(2)],
+    far: ["먼 쪽으로", pct, "받아친 공이 떨어질 곳이 상대 판에서 얼마나 먼지예요. 회전 때문에 휘는 길까지 계산하고, "
+      + "코트 너비의 40% 이상 떨어지면 100%예요. 받아친 공마다 재서 평균을 냈어요."],
+    spin: ["회전", pct, "받아칠 때 공에 건 회전의 세기예요. 걸 수 있는 가장 센 회전이 100%예요. "
+      + "판을 움직이면서 치면 회전이 걸리고, 회전이 셀수록 공이 휘고 빨라져요."],
+    follow: ["공 따라가기", pct, "공이 나에게 날아오는 동안 판이 공의 좌우 위치에 얼마나 붙어 있었는지예요. "
+      + "공 바로 아래에 있으면 100%, 코트 너비의 40% 이상 떨어져 있으면 0%예요. 공이 멀어질 때는 재지 않아요."],
+    hits: ["받아친 공 (20초)", x => x.toFixed(1), "학습할 때 하는 20초짜리 한 판에서 공을 받아친 횟수예요. "
+      + "많을수록 공을 오래 살려 둔 거예요."],
+    pred: ["예측 상대 득실 (20초)", x => (x > 0 ? "+" : "") + x.toFixed(2), "공이 어디로 떨어질지 정확히 계산해서 움직이는 "
+      + "'예측 상대'와 20초 겨뤄서 얻은 점수에서 잃은 점수를 뺀 값이에요. 예측 상대는 거의 놓치지 않아서 "
+      + "0에 가까우면 잘 막아 낸 거예요."],
   };
+  // only the curves and stats this data has (older data has no ball-following)
+  if (ABL) for (const k of Object.keys(LAB_CURVES)) if (!ABL.combos[FULL].hist[k]) delete LAB_CURVES[k];
+  if (ABL && !("follow" in ABL.combos[FULL].eval)) LAB_STATS.splice(LAB_STATS.findIndex(s => s[0] === "follow"), 1);
   function smooth(a, k = 10) {
     return a.map((_, i) => { const s = a.slice(Math.max(0, i - k + 1), i + 1); return s.reduce((p, q) => p + q, 0) / s.length; });
   }
@@ -241,9 +255,9 @@
               <text x="${L - 8}" y="${Y(v) + 4}" text-anchor="end">${fmt(v)}</text>`;
     }
     for (let g = 0; g <= n; g += 50) svg += `<text x="${X(Math.max(g - 1, 0))}" y="${VH - 6}" text-anchor="middle">${g}</text>`;
-    const order = keys.filter(k => k !== sel.lab && k !== "111").concat(sel.lab !== "111" ? ["111"] : [], [sel.lab]);
+    const order = keys.filter(k => k !== sel.lab && k !== FULL).concat(sel.lab !== FULL ? [FULL] : [], [sel.lab]);
     for (const k of order) {
-      const me = k === sel.lab, full = k === "111" && !me;
+      const me = k === sel.lab, full = k === FULL && !me;
       svg += `<path d="${path(lines[k])}" fill="none" stroke="${me ? "var(--orange)" : full ? "var(--blue)" : "var(--line-2)"}"
                stroke-width="${me ? 2.6 : full ? 1.8 : 1.2}" ${full ? 'stroke-dasharray="5 4"' : ""}/>`;
     }
@@ -251,18 +265,21 @@
       <div class="lab-chart-head"><strong>학습 곡선</strong>
         <div class="seg">${Object.entries(LAB_CURVES).map(([id, [nm]]) =>
           `<button data-metric="${id}" aria-pressed="${id === sel.metric}">${nm}</button>`).join("")}</div></div>
+      <p class="curve-desc"><strong>${name}</strong> · ${LAB_CURVES[sel.metric][2]}</p>
       <svg viewBox="0 0 ${VW} ${VH}" role="img" aria-label="세대별 ${name}">${svg}</svg>
       <div class="lab-legend"><span><i class="sw o"></i>고른 조합 (${comboName(sel.lab)})</span>
-        ${sel.lab !== "111" ? '<span><i class="sw b"></i>모두 켬</span>' : ""}<span><i class="sw g"></i>나머지 조합</span>
-        <span class="muted">가로: 세대 · 10세대 평균</span></div></div>`;
+        ${sel.lab !== FULL ? '<span><i class="sw b"></i>모두 켬</span>' : ""}<span><i class="sw g"></i>나머지 조합</span>
+        <span class="muted">가로: 세대 · 세로: 그 세대 복사본 ${ABL.pop}개의 평균 (10세대씩 묶어 부드럽게)</span></div>
+      <details class="curve-help"><summary>곡선 ${Object.keys(LAB_CURVES).length}가지가 각각 뭘 뜻하나요?</summary>
+        <dl>${Object.entries(LAB_CURVES).map(([, [nm, , d]]) => `<dt>${nm}</dt><dd>${d}</dd>`).join("")}</dl></details></div>`;
   }
   function renderLab() {
-    const e = ABL.combos[sel.lab].eval, base = ABL.combos["111"].eval;
+    const e = ABL.combos[sel.lab].eval, base = ABL.combos[FULL].eval;
     const toggles = ABL.bonus.map((b, i) =>
       `<button class="switch" data-bit="${i}" aria-pressed="${sel.lab[i] === "1"}"><span class="knob"></span>${b.name} 보너스</button>`).join("");
-    const opps = [[null, "나 (사람)"], ["worm", "꼬마선충"], ["fly", "초파리"], ["ab:111", "모두 켠 AI"]];
+    const opps = [[null, "나 (사람)"], ["worm", "꼬마선충"], ["fly", "초파리"], ["ab:" + FULL, "모두 켠 AI"]];
     const cards = LAB_STATS.map(([id, nm, get, fmt, up]) => {
-      const v = get(e), d = v - get(base), same = sel.lab === "111" || Math.abs(d) < 1e-9;
+      const v = get(e), d = v - get(base), same = sel.lab === FULL || Math.abs(d) < 1e-9;
       const good = (d > 0) === up;
       return `<div class="stat-card"><span class="nm">${nm}</span><span class="val">${fmt(v)}</span>
         <span class="cmp ${same ? "" : good ? "up" : "down"}">${same ? "모두 켠 조합 기준" : `모두 켬 ${fmt(get(base))} 대비 ${d > 0 ? "▲" : "▼"}`}</span></div>`;
@@ -298,7 +315,7 @@
       : row(t, sel[t]);
     $("pick-desc").textContent = lab
       ? `학습할 때 점수에 더하는 보너스를 켜고 끄면, 그 조합으로 처음부터 ${ABL.gens}세대 학습시킨 AI로 바뀝니다. 득점은 항상 점수에 들어가요. `
-        + `지금: ${comboName(sel.lab)} · 상대 ${sel.labOpp === null ? "나" : sel.labOpp === "ab:111" ? "모두 켠 AI" : PLAYERS[sel.labOpp][0]}`
+        + `지금: ${comboName(sel.lab)} · 상대 ${sel.labOpp === null ? "나" : sel.labOpp === "ab:" + FULL ? "모두 켠 AI" : PLAYERS[sel.labOpp][0]}`
       : versus
       ? `${PLAYERS[sel.blue][0]}(파랑) vs ${PLAYERS[sel.orange][0]}(주황) · 대결을 구경합니다. 배속 조절과 그만 보기가 있어요`
       : PLAYERS[sel[t]][1];

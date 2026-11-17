@@ -27,7 +27,8 @@ def _theta(x):
 def match(ver, opp_name, rng, n=None):
     """Trained AI `ver` (orange; a version or a weight vector) against opp_name (blue:
     'worm', 'fly', 'pred', a version or a weight vector). Returns points won/lost, hits,
-    mean spin of its returns and how far from the opponent they were aimed (0..1)."""
+    mean spin of its returns, how far from the opponent they were aimed (0..1) and how
+    closely it followed the ball while it came towards it (0..1)."""
     N = n or globals()["N"]
     theta = _theta(ver)[None]
     is_ai = not isinstance(opp_name, str) or opp_name in ai.VERSIONS
@@ -39,6 +40,7 @@ def match(ver, opp_name, rng, n=None):
     vel, op_vel = np.zeros(N), np.zeros(N)
     won = lost = hits = 0
     spin, far = [], []
+    close = toward = 0
     for t in range(FRAMES):
         out = ai.forward(theta, ai.features(ball, 1, me, op, prev, vel)[None])[0][0]
         if opp_theta is not None:
@@ -55,6 +57,9 @@ def match(ver, opp_name, rng, n=None):
         else:
             op, dop = pd.move(op, o)
         prev, op_prev = out, o
+        _, by, vx, _, _ = pd.view(ball, 1)
+        close += np.where(vx > 0, 1 - np.minimum(np.abs(by - me) / 0.4, 1), 0).sum()
+        toward += (vx > 0).sum()
         ball, scored, hit = pd.step(ball, op, me, dop, dme)
         won += (scored > 0).sum()
         lost += (scored < 0).sum()
@@ -66,11 +71,11 @@ def match(ver, opp_name, rng, n=None):
         if scored.any():
             new = pd.serve(np.where(scored > 0, -1, 1), rng, N)
             ball = np.where((scored != 0)[:, None], new, ball)
-    return won, lost, hits, (np.mean(spin) if spin else 0), (np.mean(far) if far else 0)
+    return won, lost, hits, (np.mean(spin) if spin else 0), (np.mean(far) if far else 0), close / max(toward, 1)
 
 
 def _run(pair):
-    w, l, h, s, _ = match(*pair, np.random.default_rng(7))  # same serves for every pairing
+    w, l, h, s, _, _ = match(*pair, np.random.default_rng(7))  # same serves for every pairing
     return pair, w, l, h, s
 
 
