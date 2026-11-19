@@ -151,7 +151,7 @@
     ["점수 방식 실험", window.ABL_DATA ? ["lab"] : []],
   ].filter(t => t[1].length);
   const sel = { tab: 0, 0: "worm", 1: VERS[0], 2: null, blue: "worm", orange: VERS[0] || "fly",
-                lab: FULL, labOpp: null, metric: "far" };
+                lab: FULL, labOpp: null, metric: "far", effect: "worm" };
   const tabName = () => TABS[sel.tab][0];
   const pair = () => (tabName() === "대결" ? [sel.blue, sel.orange]
     : tabName() === "점수 방식 실험" ? [sel.labOpp, "ab:" + sel.lab] : [null, sel[sel.tab]]);
@@ -202,7 +202,7 @@
   ];
 
   // ------------------------------------------------------------ score-rule experiment (web/ablation.js)
-  // The same AI trained from scratch once per on/off combination of the bonuses (16 for 4).
+  // The same AI trained from scratch once per on/off combination of the bonuses (64 for 6).
   const ABL = window.ABL_DATA;
   function comboName(key) {
     const on = ABL.bonus.filter((b, i) => key[i] === "1").map(b => b.name);
@@ -219,6 +219,8 @@
     ["spin", "친 공의 평균 회전", e => e.spin || 0, pct, true],
     ["far", "상대에게서 먼 쪽으로", e => e.far || 0, pct, true],
     ["follow", "공 따라가기", e => e.follow || 0, pct, true],
+    ["fast", "빠른 공", e => e.fast || 0, pct, true],
+    ["center", "가운데 복귀", e => e.center || 0, pct, true],
     ["hits", "60초 동안 받아친 공", e => e.hits || 0, x => x.toFixed(1), true],
   ];
   // learning curves recorded during training: [button, text, what it means]
@@ -229,6 +231,10 @@
       + "판을 움직이면서 치면 회전이 걸리고, 회전이 셀수록 공이 휘고 빨라져요."],
     follow: ["공 따라가기", pct, "공이 나에게 날아오는 동안 판이 공의 좌우 위치에 얼마나 붙어 있었는지예요. "
       + "공 바로 아래에 있으면 100%, 코트 너비의 40% 이상 떨어져 있으면 0%예요. 공이 멀어질 때는 재지 않아요."],
+    fast: ["빠른 공", pct, "받아친 공이 얼마나 빠른지예요. 서브 속도면 0%, 그 3배면 100%예요. "
+      + "회전이 세거나 공을 옆으로 세게 밀어 치면 빨라져요. 받아친 공마다 재서 평균을 냈어요."],
+    center: ["가운데 복귀", pct, "공이 상대 쪽으로 날아가는 동안 판이 코트 가운데에 얼마나 가까이 있었는지예요. "
+      + "한가운데면 100%, 가운데에서 코트 너비의 40% 이상 떨어져 있으면 0%예요. 다음 공을 어디로든 받으러 가기 좋은 자리예요."],
     hits: ["받아친 공 (20초)", x => x.toFixed(1), "학습할 때 하는 20초짜리 한 판에서 공을 받아친 횟수예요. "
       + "많을수록 공을 오래 살려 둔 거예요."],
     pred: ["예측 상대 득실 (20초)", x => (x > 0 ? "+" : "") + x.toFixed(2), "공이 어디로 떨어질지 정확히 계산해서 움직이는 "
@@ -237,7 +243,36 @@
   };
   // only the curves and stats this data has (older data has no ball-following)
   if (ABL) for (const k of Object.keys(LAB_CURVES)) if (!ABL.combos[FULL].hist[k]) delete LAB_CURVES[k];
-  if (ABL && !("follow" in ABL.combos[FULL].eval)) LAB_STATS.splice(LAB_STATS.findIndex(s => s[0] === "follow"), 1);
+  if (ABL) for (let i = LAB_STATS.length - 1; i >= 0; i--) if (!(LAB_STATS[i][0] in ABL.combos[FULL].eval)) LAB_STATS.splice(i, 1);
+  // What switching one bonus on does on average: every pair of combinations that differ only in that bonus.
+  function labEffects() {
+    const [, nm, get, fmt, up] = LAB_STATS.find(s => s[0] === sel.effect) || LAB_STATS[0];
+    const fx = ABL.bonus.map((b, i) => {
+      const d = [];
+      for (const k of Object.keys(ABL.combos)) {
+        if (k[i] !== "1") continue;
+        const off = ABL.combos[k.slice(0, i) + "0" + k.slice(i + 1)];
+        if (off) d.push(get(ABL.combos[k].eval) - get(off.eval));
+      }
+      return [b.name, d.length ? d.reduce((p, q) => p + q, 0) / d.length : 0, d.length];
+    });
+    const m = Math.max(...fx.map(f => Math.abs(f[1])), 1e-9);
+    const bars = fx.map(([bn, v, n]) => {
+      const w = Math.abs(v) / m * 50, good = (v > 0) === up && Math.abs(v) > 1e-9;
+      return `<div class="fx-row"><span class="fx-name">${bn}</span>
+        <span class="fx-track"><span class="fx-zero"></span>
+          <span class="fx-bar ${Math.abs(v) < 1e-9 ? "" : good ? "up" : "down"}" style="${v >= 0 ? "left" : "right"}:50%;width:${w}%"></span></span>
+        <span class="fx-val">${fmt === signed ? signed(v) : (v > 0 ? "+" : v < 0 ? "−" : "") + fmt(Math.abs(v))}</span></div>`;
+    }).join("");
+    const pairs = fx[0][2];
+    return `<div class="lab-chart panel">
+      <div class="lab-chart-head"><strong>보너스 효과</strong>
+        <div class="seg">${LAB_STATS.map(([id, n]) =>
+          `<button data-effect="${id}" aria-pressed="${id === sel.effect}">${n.replace(/ \(60초당\)| 60초당 득실/, "")}</button>`).join("")}</div></div>
+      <p class="curve-desc">보너스 하나를 켰을 때 ‘<strong>${nm}</strong>’ 값이 평균 얼마나 달라지는지예요.
+        그 보너스만 다르고 나머지는 같은 조합 ${pairs}쌍을 비교해서 평균을 냈어요. 초록은 좋아진 쪽, 빨강은 나빠진 쪽이에요.</p>
+      <div class="fx">${bars}</div></div>`;
+  }
   function smooth(a, k = 10) {
     return a.map((_, i) => { const s = a.slice(Math.max(0, i - k + 1), i + 1); return s.reduce((p, q) => p + q, 0) / s.length; });
   }
@@ -295,6 +330,7 @@
       <div class="pick-row"><span class="side">상대</span>${opps.map(([k, nm]) =>
         `<button class="pick" data-labopp="${k || ""}" aria-pressed="${k === sel.labOpp}">${nm}</button>`).join("")}</div>
       <div class="stat-grid">${cards}</div>
+      ${labEffects()}
       ${labChart()}
       <div class="table-wrap"><table class="lab-table">
         <thead><tr>${ABL.bonus.map(b => `<th>${b.name}</th>`).join("")}${LAB_STATS.map(s => `<th>${s[1]}</th>`).join("")}</tr></thead>
@@ -330,13 +366,14 @@
     if (b) { sel.tab = +b.dataset.tab; renderMenu(); }
   });
   $("picks").addEventListener("click", e => {
-    const b = e.target.closest("[data-slot],[data-bit],[data-labopp],[data-metric],[data-combo]");
+    const b = e.target.closest("[data-slot],[data-bit],[data-labopp],[data-metric],[data-effect],[data-combo]");
     if (!b) return;
     const d = b.dataset;
     if (d.slot !== undefined) sel[d.slot] = d.key;
     else if (d.bit !== undefined) { const a = [...sel.lab]; a[+d.bit] = a[+d.bit] === "1" ? "0" : "1"; sel.lab = a.join(""); }
     else if (d.labopp !== undefined) sel.labOpp = d.labopp || null;
     else if (d.metric) sel.metric = d.metric;
+    else if (d.effect) sel.effect = d.effect;
     else if (d.combo) sel.lab = d.combo;
     renderMenu();
   });

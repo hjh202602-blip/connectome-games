@@ -52,6 +52,9 @@ FAR_BONUS = 0.06               # reward for aiming far from the opponent's paddl
 FOLLOW_BONUS = 0.0             # reward per frame for keeping the paddle near the ball while it comes
                                # towards you (off for v1-v3; switched on in the score-rule experiment)
 FOLLOW_FULL = 0.4              # this far from the ball (40% of the court) earns nothing
+FAST_BONUS = 0.0               # reward for a fast return (x fast fraction; 0 at serve speed, 1 at 3x)
+CENTER_BONUS = 0.0             # reward per frame for staying near the middle while the ball goes away
+CENTER_FULL = 0.4              # this far from the middle earns nothing
 FAR_FULL = 0.4                 # this far away (40% of the court) earns the whole bonus
 
 
@@ -60,6 +63,12 @@ def brain_out(brain, ball, op):
     bx, by, vx, vy, _ = pd.view(ball, -1)
     X = np.asarray(pong_features(bx, by, vx, vy, op)).T
     return np.clip(brain.predict(X)[:, 0], -1, 1)
+
+
+def fast_frac(ball):
+    """0 at serve speed, 1 at three times serve speed (spin and sideways speed both count)."""
+    _, _, vx, vy, _ = pd.view(ball, 1)
+    return np.clip((np.hypot(vx, vy) / pd.SERVE_V - 1) / 2, 0, 1)
 
 
 def play(thetas, opp, games, seed, brains, fly_every=FLY_EVERY):
@@ -89,6 +98,8 @@ def play(thetas, opp, games, seed, brains, fly_every=FLY_EVERY):
     far_sum = np.zeros(shape)
     follow_sum = np.zeros(shape)   # closeness to the ball, summed over frames it comes towards me
     toward_n = np.zeros(shape)
+    fast_sum = np.zeros(shape)
+    center_sum = np.zeros(shape)
     has = set(games)
     for t in range(FRAMES):
         x = ai.features(ball, 1, me, op, me_prev, me_vel)
@@ -136,9 +147,14 @@ def play(thetas, opp, games, seed, brains, fly_every=FLY_EVERY):
         _, by, vx, _, _ = pd.view(ball, 1)
         toward = vx > 0                       # the ball is coming at me
         close = np.where(toward, 1 - np.minimum(np.abs(by - me) / FOLLOW_FULL, 1), 0)
-        score += scored + RETURN_BONUS * h + SPIN_BONUS * spun + FAR_BONUS * far + FOLLOW_BONUS * close
+        mid = np.where(toward, 0, 1 - np.minimum(np.abs(me - 0.5) / CENTER_FULL, 1))  # ball going away
+        fast = np.where(h, fast_frac(ball), 0)
+        score += (scored + RETURN_BONUS * h + SPIN_BONUS * spun + FAR_BONUS * far + FOLLOW_BONUS * close
+                  + FAST_BONUS * fast + CENTER_BONUS * mid)
         follow_sum += close
         toward_n += toward
+        fast_sum += fast
+        center_sum += mid
         far_sum += far
         points += scored
         hits += hit > 0
@@ -150,7 +166,8 @@ def play(thetas, opp, games, seed, brains, fly_every=FLY_EVERY):
             new[..., 3] = pd.SERVE_V * np.sin(srv[t])
             ball = np.where((scored != 0)[..., None], new, ball)
     follow = follow_sum / np.maximum(toward_n, 1)   # 0..1, how closely it followed the ball
-    return score, points, hits, spin_sum, far_sum, follow, kind
+    center = center_sum / np.maximum(FRAMES - toward_n, 1)  # 0..1, how central while the ball was away
+    return score, points, hits, spin_sum, far_sum, follow, fast_sum, center, kind
 
 
 _BRAINS = {}
@@ -213,10 +230,10 @@ def main():
         cands = theta + SIGMA * eps
         if pool:
             parts = pool.map(_work, [(c, opp, games, seed, fly_every) for c in np.array_split(cands, workers)])
-            score, points, hits, spin, far, _ = (np.concatenate([p[i] for p in parts]) for i in range(6))
-            kind = parts[0][6]
+            score, points, hits, spin, far = (np.concatenate([p[i] for p in parts]) for i in range(5))
+            kind = parts[0][-1]
         else:
-            score, points, hits, spin, far, _, kind = play(cands, opp, games, seed, _BRAINS, fly_every)
+            score, points, hits, spin, far, *_, kind = play(cands, opp, games, seed, _BRAINS, fly_every)
         fit = score.mean(1)
         # rank-based weights, robust to noisy scores
         ranks = np.empty(pop)

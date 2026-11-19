@@ -1,11 +1,11 @@
-"""Score-rule experiment: the same trained AI, trained 16 times from scratch, once for every
-on/off combination of the four bonuses (return, spin, aiming far from the opponent,
-following the ball).
+"""Score-rule experiment: the same trained AI, trained 64 times from scratch, once for every
+on/off combination of the six bonuses (return, spin, aiming far from the opponent,
+following the ball, fast returns, getting back to the middle).
 
-    python train_ablation.py          # train all 16 (8 processes at a time), test, write web/ablation.js
+    python train_ablation.py          # train all 64 (8 processes at a time, about 6-8 hours), test, write web/ablation.js
     python train_ablation.py eval     # only test the saved ones and write web/ablation.js
 
-Everything else is identical for the 16 runs: the same starting network, the same random
+Everything else is identical for the 64 runs: the same starting network, the same random
 noise, the same opponents as v1 (4x predictor, 2x straight-line guesser, 2x itself) and the
 same number of generations. Points always count; only the bonuses are switched.
 """
@@ -20,8 +20,10 @@ import ai
 import train_ai as T
 
 BONUS = (("return", "받아치기", 0.02), ("spin", "회전", 0.04), ("far", "먼 쪽", 0.06),
-         ("follow", "공 따라가기", 0.0004))  # follow: per frame while the ball comes at it
-COMBOS = [(r, s, f, w) for r in (1, 0) for s in (1, 0) for f in (1, 0) for w in (1, 0)]
+         ("follow", "공 따라가기", 0.0004),   # per frame while the ball comes at it
+         ("fast", "빠른 공", 0.04),
+         ("center", "가운데 복귀", 0.0004))   # per frame while the ball goes away
+COMBOS = [tuple(int(b) for b in f"{i:06b}") for i in range(63, -1, -1)]   # 111111 ... 000000
 GENS, POP = 250, 64
 GAMES = [T.PRED] * 4 + [T.LINE] * 2 + [T.SELF] * 2
 DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "ablation")
@@ -39,16 +41,16 @@ def path(c):
 
 def train(c):
     """Train one combination from scratch. Runs in its own process."""
-    T.RETURN_BONUS, T.SPIN_BONUS, T.FAR_BONUS, T.FOLLOW_BONUS = (on * b[2] for on, b in zip(c, BONUS))
+    T.RETURN_BONUS, T.SPIN_BONUS, T.FAR_BONUS, T.FOLLOW_BONUS, T.FAST_BONUS, T.CENTER_BONUS = (on * b[2] for on, b in zip(c, BONUS))
     rng = np.random.default_rng(0)            # same start and same noise for every combination
     theta = ai.init(rng)
     m, v = np.zeros_like(theta), np.zeros_like(theta)
-    hist = {k: [] for k in ("pred", "line", "hits", "spin", "far", "follow")}
+    hist = {k: [] for k in ("pred", "line", "hits", "spin", "far", "follow", "fast", "center")}
     half, t0 = POP // 2, time.time()
     for gen in range(1, GENS + 1):
         eps = rng.normal(0, 1, (half, ai.N_PARAMS))
         eps = np.concatenate([eps, -eps])
-        score, points, hits, spin, far, follow, kind = T.play(theta + T.SIGMA * eps, {T.SELF: theta}, GAMES,
+        score, points, hits, spin, far, follow, fast, center, kind = T.play(theta + T.SIGMA * eps, {T.SELF: theta}, GAMES,
                                                        int(rng.integers(2 ** 31)), {})
         ranks = np.empty(POP)
         ranks[np.argsort(score.mean(1))] = np.arange(POP)
@@ -63,13 +65,15 @@ def train(c):
         hist["spin"].append(spin.sum() / n)
         hist["far"].append(far.sum() / n)
         hist["follow"].append(follow.mean())
+        hist["fast"].append(fast.sum() / n)
+        hist["center"].append(center.mean())
         if gen % 10 == 0 or gen == GENS:
             os.makedirs(DIR, exist_ok=True)
             meta = {"gens": gen, "games": gen * POP * len(GAMES), "combo": key(c), "hist": hist}
             np.savez(path(c), theta=theta, meta=np.array(meta, dtype=object))
         if gen % 25 == 0:
             print(f"[{label(c)}] {gen}세대 | 예측 {hist['pred'][-1]:+.2f} 직선 {hist['line'][-1]:+.2f} | "
-                  f"받아친 공 {hist['hits'][-1]:.1f} | 회전 {hist['spin'][-1]:.0%} | 먼 쪽 {hist['far'][-1]:.0%} | 따라가기 {hist['follow'][-1]:.0%} | "
+                  f"받아친 공 {hist['hits'][-1]:.1f} | 회전 {hist['spin'][-1]:.0%} | 먼 쪽 {hist['far'][-1]:.0%} | 따라가기 {hist['follow'][-1]:.0%} | 빠른 공 {hist['fast'][-1]:.0%} | 가운데 {hist['center'][-1]:.0%} | "
                   f"{time.time() - t0:.0f}초", flush=True)
     return key(c)
 
@@ -83,8 +87,8 @@ def test(job):
     import eval_ai as E
     c, opp = job
     theta = ai.load_theta(path(c))[0]
-    w, l, h, s, f, fo = E.match(theta, opp, np.random.default_rng(7), n=EVAL_N)
-    return key(c), opp, int(w), int(l), int(h), float(s), float(f), float(fo)
+    w, l, h, s, f, fo, fa, ce = E.match(theta, opp, np.random.default_rng(7), n=EVAL_N)
+    return key(c), opp, int(w), int(l), int(h), float(s), float(f), float(fo), float(fa), float(ce)
 
 
 def export(results):
@@ -99,7 +103,7 @@ def export(results):
             "eval": results.get(key(c), {})}
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "ablation.js")
     with open(out, "w", encoding="utf-8") as f:
-        f.write("// generated by train_ablation.py - the score-rule experiment (16 AIs, see README)\n")
+        f.write("// generated by train_ablation.py - the score-rule experiment (64 AIs, see README)\n")
         f.write("window.ABL_DATA = " + json.dumps(data, ensure_ascii=False) + ";\n")
     return out
 
@@ -117,19 +121,22 @@ def main():
     results = {}
     jobs = [(c, o) for c in COMBOS for o in EVAL_OPP]
     with mp.Pool(workers) as pool:
-        for k, o, w, l, h, s, f, fo in pool.imap_unordered(test, jobs):
+        for k, o, w, l, h, s, f, fo, fa, ce in pool.imap_unordered(test, jobs):
             r = results.setdefault(k, {})
             r[o] = [w, l]
             r.setdefault("hits", []).append(h)
             r.setdefault("spin", []).append(s)
             r.setdefault("far", []).append(f)
             r.setdefault("follow", []).append(fo)
+            r.setdefault("fast", []).append(fa)
+            r.setdefault("center", []).append(ce)
             print(f"[{label(tuple(map(int, k)))}] vs {o}: {w}:{l}", flush=True)
     for r in results.values():  # averages over the three test opponents
         r["hits"] = round(sum(r["hits"]) / len(r["hits"]) / EVAL_N, 2)  # returns per 60 s rally
         r["spin"] = round(sum(r["spin"]) / len(r["spin"]), 3)
         r["far"] = round(sum(r["far"]) / len(r["far"]), 3)
-        r["follow"] = round(sum(r["follow"]) / len(r["follow"]), 3)
+        for m in ("follow", "fast", "center"):
+            r[m] = round(sum(r[m]) / len(r[m]), 3)
     print("웹 버전에 넣었습니다:", export(results))
 
 
