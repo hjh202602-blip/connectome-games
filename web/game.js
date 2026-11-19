@@ -3,8 +3,8 @@
 (function () {
   "use strict";
   const W = 640, H = 640, GAME_W = 640, FPS = 60;
-  const BG = "#12141c", FG = "#e6e8f0", DIM = "#787d8c";
-  const HUMAN_C = "#5aaaff", BRAIN_C = "#ff9646";
+  const BG = "#10131a", FG = "#eceef3", DIM = "#7c8292";
+  const HUMAN_C = "#6aaeff", BRAIN_C = "#ff9a5a";
   const FONT = '"Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif';
   const F_BIG = `bold 40px ${FONT}`, F_MID = `bold 24px ${FONT}`, F_SMALL = `17px ${FONT}`;
   const $ = id => document.getElementById(id);
@@ -190,11 +190,11 @@
 
   // small preview pictures on the game cards
   const ART = {
-    paddle: `<svg viewBox="0 0 300 130"><rect x="40" y="20" width="220" height="90" rx="6" fill="none" stroke="#2a2f40"/>
-      <line x1="40" y1="65" x2="260" y2="65" stroke="#323746" stroke-dasharray="8 6" stroke-width="3"/>
-      <rect x="150" y="24" width="56" height="7" rx="3" fill="#ff9646"/><rect x="86" y="99" width="56" height="7" rx="3" fill="#5aaaff"/>
+    paddle: `<svg viewBox="0 0 300 130"><rect x="40" y="20" width="220" height="90" rx="10" fill="none" stroke="#252a35"/>
+      <line x1="40" y1="65" x2="260" y2="65" stroke="#2a303c" stroke-dasharray="8 6" stroke-width="3"/>
+      <rect x="150" y="24" width="56" height="7" rx="3.5" fill="#ff9a5a"/><rect x="86" y="99" width="56" height="7" rx="3.5" fill="#6aaeff"/>
       <path d="M118 96 Q 190 70 160 40" fill="none" stroke="#c86aa0" stroke-width="2.5" stroke-dasharray="3 5"/>
-      <circle cx="160" cy="40" r="6" fill="#e6e8f0"/></svg>`,
+      <circle cx="160" cy="40" r="6" fill="#eceef3"/></svg>`,
   };
   const GAMES = [
     { key: "1", name: "패들볼", art: ART.paddle, input: "A/D · ←/→", make: () => PaddleBall(),
@@ -293,7 +293,7 @@
     const order = keys.filter(k => k !== sel.lab && k !== FULL).concat(sel.lab !== FULL ? [FULL] : [], [sel.lab]);
     for (const k of order) {
       const me = k === sel.lab, full = k === FULL && !me;
-      svg += `<path d="${path(lines[k])}" fill="none" stroke="${me ? "var(--orange)" : full ? "var(--blue)" : "var(--line-2)"}"
+      svg += `<path d="${path(lines[k])}" fill="none" stroke="${me ? "var(--orange)" : full ? "var(--blue)" : "rgba(255,255,255,.16)"}"
                stroke-width="${me ? 2.6 : full ? 1.8 : 1.2}" ${full ? 'stroke-dasharray="5 4"' : ""}/>`;
     }
     return `<div class="lab-chart panel">
@@ -492,11 +492,11 @@
       draw() {
         const { ball, hy, by } = st;
         ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
-        ctx.fillStyle = "#323746";
+        ctx.fillStyle = "#232834";
         for (let x = 0; x < GAME_W; x += 30) ctx.fillRect(x, H / 2 - 2, 15, 4);
         const ph = PH * GAME_W;
-        ctx.fillStyle = HUMAN_C; ctx.fillRect(hy * GAME_W - ph / 2, 0.97 * H, ph, 12);
-        ctx.fillStyle = BRAIN_C; ctx.fillRect(by * GAME_W - ph / 2, 0.03 * H - 12, ph, 12);
+        rrect(hy * GAME_W - ph / 2, 0.97 * H, ph, 12, 6, HUMAN_C);
+        rrect(by * GAME_W - ph / 2, 0.03 * H - 12, ph, 12, 6, BRAIN_C);
         const level = ball ? speedFactor(ball[4]) : 1;
         const amt = ball ? Math.min(Math.abs(ball[4]) / SPIN_MAX, 1) : 0;
         const dir = !ball || amt < 0.05 ? "" : ball[4] > 0 ? "←" : "→";
@@ -509,7 +509,7 @@
           const [cx, cy] = toScreen(ball[0], ball[1]);
           ctx.fillStyle = FG; ctx.beginPath(); ctx.arc(cx, cy, 9, 0, 7); ctx.fill();
           const dx = 8 * Math.cos(st.angle), dy = 8 * Math.sin(st.angle);
-          ctx.strokeStyle = "#e6466e"; ctx.lineWidth = 3;
+          ctx.strokeStyle = "#ef6b75"; ctx.lineWidth = 3; ctx.lineCap = "round";
           ctx.beginPath(); ctx.moveTo(cx - dx, cy - dy); ctx.lineTo(cx + dx, cy + dy); ctx.stroke();
         }
         text(String(st.score[0]), F_BIG, HUMAN_C, 40, H / 2 + 40, true);
